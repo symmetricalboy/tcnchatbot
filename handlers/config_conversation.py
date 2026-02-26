@@ -166,4 +166,5 @@ def get_config_conversation_handler() -> ConversationHandler:
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )

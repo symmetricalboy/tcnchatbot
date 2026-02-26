@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.13"
-python-telegram-bot = "^22.6"
+python-telegram-bot = {version = "^22.6", extras = ["webhooks"]}
 python-dotenv = "^1.0.1"
 asyncpg = "^0.31.0"
 
