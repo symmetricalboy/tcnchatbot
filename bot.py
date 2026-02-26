@@ -79,10 +79,10 @@ async def admin_mention(update: Update, context) -> None:
         if not config:
             return
 
-        public_topic_group_id = config.get("public_topic_group_id")
+        topic_group_id = config.get("topic_group_id")
 
         # If no public topic group is configured, or if the current chat doesn't match, ignore the mention
-        if not public_topic_group_id or chat.id != public_topic_group_id:
+        if not topic_group_id or chat.id != topic_group_id:
             return
 
         admins = await chat.get_administrators()

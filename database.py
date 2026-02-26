@@ -35,8 +35,8 @@ class Database:
                 """
                 CREATE TABLE IF NOT EXISTS bot_config (
                     id INTEGER PRIMARY KEY DEFAULT 1,
-                    public_topic_group_id BIGINT,
-                    public_channel_id BIGINT,
+                    topic_group_id BIGINT,
+                    channel_id BIGINT,
                     admin_group_id BIGINT
                 );
                 
@@ -55,6 +55,22 @@ class Database:
             except asyncpg.exceptions.UndefinedColumnError:
                 pass  # Column already renamed or table is new
 
+            try:
+                await conn.execute(
+                    "ALTER TABLE bot_config RENAME COLUMN public_topic_group_id TO topic_group_id;"
+                )
+                logger.info("Migrated public_topic_group_id column to topic_group_id.")
+            except asyncpg.exceptions.UndefinedColumnError:
+                pass
+
+            try:
+                await conn.execute(
+                    "ALTER TABLE bot_config RENAME COLUMN public_channel_id TO channel_id;"
+                )
+                logger.info("Migrated public_channel_id column to channel_id.")
+            except asyncpg.exceptions.UndefinedColumnError:
+                pass
+
     async def get_config(self):
         if not self.pool:
             return None
@@ -66,8 +82,8 @@ class Database:
             return False
 
         valid_keys = {
-            "public_topic_group_id",
-            "public_channel_id",
+            "topic_group_id",
+            "channel_id",
             "admin_group_id",
         }
         updates = []

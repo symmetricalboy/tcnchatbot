@@ -54,7 +54,7 @@ async def config_start(update: Update, context: CallbackContext) -> int:
         "(including the admin group) **MUST HAVE A PUBLIC @USERNAME SET** to be linked "
         "to this bot. We strongly advise that you turn on 'Approve New Members' for the admin group "
         "so the public username does not expose it to unauthorized users.\n\n"
-        "First, please send me the **@username** of your **public topic group**.\n\n"
+        "First, please send me the **@username** of your **topic group**.\n\n"
         "Note: You must add me to this group and give me ALL permissions (except 'Remain Anonymous').\n\n"
         "Please send the group @username now (or type /cancel to abort):",
         parse_mode="Markdown",
@@ -77,8 +77,8 @@ async def get_topic_group(update: Update, context: CallbackContext) -> int:
     context.user_data["topic_group"] = group_id
 
     await update.message.reply_text(
-        f"✅ Validated Public Topic Group (ID: `{group_id}`)\n\n"
-        "Next, please send me the **@username** of your **public channel**.\n\n"
+        f"✅ Validated Topic Group (ID: `{group_id}`)\n\n"
+        "Next, please send me the **@username** of your **channel**.\n\n"
         "Note: You must also add me to this channel as an admin with ALL permissions (except 'Remain Anonymous').\n\n"
         "Please send the channel @username now:",
         parse_mode="Markdown",
@@ -101,7 +101,7 @@ async def get_public_channel(update: Update, context: CallbackContext) -> int:
     context.user_data["public_channel"] = channel_id
 
     await update.message.reply_text(
-        f"✅ Validated Public Channel (ID: `{channel_id}`)\n\n"
+        f"✅ Validated Channel (ID: `{channel_id}`)\n\n"
         "Finally, please send me the **@username** of your **admin group**.\n\n"
         "*(Reminder: You must set a public link/username for your admin group so the bot can link to it. "
         "Please turn on 'Approve New Members' in the admin group to keep it secure!)*\n\n"
@@ -126,20 +126,20 @@ async def get_admin_channel(update: Update, context: CallbackContext) -> int:
 
     # Retrieve all inputs from context
     topic_group_id = context.user_data.get("topic_group")
-    public_channel_id = context.user_data.get("public_channel")
+    channel_id = context.user_data.get("public_channel")
 
     try:
         await db.update_config(
-            public_topic_group_id=topic_group_id,
-            public_channel_id=public_channel_id,
+            topic_group_id=topic_group_id,
+            channel_id=channel_id,
             admin_group_id=admin_group_id,
         )
 
         await update.message.reply_text(
             "Configuration Complete!\n\n"
             "I have updated the database with the following IDs:\n"
-            f"- Public Topic Group: {topic_group_id}\n"
-            f"- Public Channel: {public_channel_id}\n"
+            f"- Topic Group: {topic_group_id}\n"
+            f"- Channel: {channel_id}\n"
             f"- Admin Group: {admin_group_id}\n\n"
             "Please ensure I have been added to all of these with ALL permissions (except anonymous).\n"
             "Have a great day!"
