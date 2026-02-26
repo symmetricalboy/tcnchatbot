@@ -402,8 +402,9 @@ async def check_permissions(update: Update, context: CallbackContext) -> int:
                         ("can_invite_users", "Invite Users"),
                         ("can_pin_messages", "Pin Messages"),
                     ]
-                    # Also check handle topics if applicable (groups could lack it cleanly, treat False as explicitly denied if supergroup)
-                    if chat.type == "supergroup":
+                    # Also check handle topics if applicable
+                    # Telegram's API sets `is_forum` to True if Topics are enabled in the supergroup
+                    if chat.is_forum:
                         group_perms.append(("can_manage_topics", "Manage Topics"))
 
                     for attr, name in group_perms:
