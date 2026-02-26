@@ -37,12 +37,23 @@ class Database:
                     id INTEGER PRIMARY KEY DEFAULT 1,
                     public_topic_group_id BIGINT,
                     public_channel_id BIGINT,
-                    admin_private_channel_id BIGINT
+                    admin_group_id BIGINT
                 );
                 
                 INSERT INTO bot_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
             """
             )
+
+            # Migrate the old column name if it exists
+            try:
+                await conn.execute(
+                    "ALTER TABLE bot_config RENAME COLUMN admin_private_channel_id TO admin_group_id;"
+                )
+                logger.info(
+                    "Migrated admin_private_channel_id column to admin_group_id."
+                )
+            except asyncpg.exceptions.UndefinedColumnError:
+                pass  # Column already renamed or table is new
 
     async def get_config(self):
         if not self.pool:
@@ -57,7 +68,7 @@ class Database:
         valid_keys = {
             "public_topic_group_id",
             "public_channel_id",
-            "admin_private_channel_id",
+            "admin_group_id",
         }
         updates = []
         values = []
