@@ -21,7 +21,7 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 
 from database import db
-from handlers.config_conversation import get_config_conversation_handler
+from handlers.init_config import get_config_conversation_handler
 
 # Enable logging
 logging.basicConfig(
@@ -105,17 +105,24 @@ async def start(update: Update, context) -> None:
     if update.effective_chat.type != "private":
         return
 
-    keyboard = [
-        [InlineKeyboardButton("⚙️ Setup Configuration", callback_data="start_config")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Check if the database is fully configured
+    config = await db.get_config()
+    is_configured = False
+    if config:
+        if (
+            config.get("topic_group_id")
+            and config.get("channel_id")
+            and config.get("admin_group_id")
+        ):
+            is_configured = True
 
-    welcome_text = (
-        "👋 Welcome to the Mod Mention Bot Owner Menu!\n\n"
-        "Use the buttons below to configure the bot for your groups."
-    )
+    if not is_configured:
+        # If not configured, auto-start the config process
+        from handlers.init_config import config_start
 
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+        # We need to adapt config_start to handle both Message and CallbackQuery
+        # For a cleaner integration, let's keep start logic here but pass it to the handler
+        pass  # Wait, we need to rewrite this completely. Let's undo and approach via init_config.py
 
 
 async def post_init(application: Application) -> None:

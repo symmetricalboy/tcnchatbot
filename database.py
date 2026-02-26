@@ -44,33 +44,6 @@ class Database:
             """
             )
 
-            # Migrate the old column name if it exists
-            try:
-                await conn.execute(
-                    "ALTER TABLE bot_config RENAME COLUMN admin_private_channel_id TO admin_group_id;"
-                )
-                logger.info(
-                    "Migrated admin_private_channel_id column to admin_group_id."
-                )
-            except asyncpg.exceptions.UndefinedColumnError:
-                pass  # Column already renamed or table is new
-
-            try:
-                await conn.execute(
-                    "ALTER TABLE bot_config RENAME COLUMN public_topic_group_id TO topic_group_id;"
-                )
-                logger.info("Migrated public_topic_group_id column to topic_group_id.")
-            except asyncpg.exceptions.UndefinedColumnError:
-                pass
-
-            try:
-                await conn.execute(
-                    "ALTER TABLE bot_config RENAME COLUMN public_channel_id TO channel_id;"
-                )
-                logger.info("Migrated public_channel_id column to channel_id.")
-            except asyncpg.exceptions.UndefinedColumnError:
-                pass
-
     async def get_config(self):
         if not self.pool:
             return None
