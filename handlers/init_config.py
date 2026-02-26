@@ -370,12 +370,55 @@ async def check_permissions(update: Update, context: CallbackContext) -> int:
             results.append(f"❌ **{chat_name}**: Not Configured")
             return
         try:
-            member = await context.bot.get_chat_member(chat_id, context.bot.id)
-            if member.status in ["administrator", "creator"]:
-                results.append(f"✅ **{chat_name}**: Admin Access OK")
+            chat = await context.bot.get_chat(chat_id)
+            member = await chat.get_member(context.bot.id)
+
+            if member.status == "creator":
+                results.append(f"✅ **{chat_name}**: Creator (All Permissions OK)")
+                return
+            elif member.status == "administrator":
+                missing_perms = []
+
+                # Remain Anonymous must be OFF (False or None)
+                if getattr(member, "is_anonymous", False):
+                    missing_perms.append("Remain Anonymous (MUST BE DISABLED)")
+
+                if chat.type == "channel":
+                    if not getattr(member, "can_post_messages", False):
+                        missing_perms.append("Post Messages")
+                    if not getattr(member, "can_edit_messages", False):
+                        missing_perms.append("Edit Messages")
+                    if not getattr(member, "can_delete_messages", False):
+                        missing_perms.append("Delete Messages")
+                else:
+                    # Check group permissions
+                    group_perms = [
+                        ("can_manage_chat", "Manage Chat"),
+                        ("can_delete_messages", "Delete Messages"),
+                        ("can_manage_video_chats", "Manage Video Chats"),
+                        ("can_restrict_members", "Restrict Members"),
+                        ("can_promote_members", "Promote Members"),
+                        ("can_change_info", "Change Info"),
+                        ("can_invite_users", "Invite Users"),
+                        ("can_pin_messages", "Pin Messages"),
+                    ]
+                    # Also check handle topics if applicable (groups could lack it cleanly, treat False as explicitly denied if supergroup)
+                    if chat.type == "supergroup":
+                        group_perms.append(("can_manage_topics", "Manage Topics"))
+
+                    for attr, name in group_perms:
+                        if getattr(member, attr, None) is False:
+                            missing_perms.append(name)
+
+                if missing_perms:
+                    results.append(
+                        f"⚠️ **{chat_name}**: Missing permissions: {', '.join(missing_perms)}"
+                    )
+                else:
+                    results.append(f"✅ **{chat_name}**: Admin Access OK")
             else:
                 results.append(
-                    f"⚠️ **{chat_name}**: Present, but NOT an Admin! Please promote the bot."
+                    f"⚠️ **{chat_name}**: Present, but NOT an Admin. Please promote the bot."
                 )
         except Exception as e:
             results.append(
@@ -388,8 +431,16 @@ async def check_permissions(update: Update, context: CallbackContext) -> int:
 
     report = "🛡️ **Permission Check Results**\n\n" + "\n\n".join(results)
 
-    await query.message.reply_text(report, parse_mode="Markdown")
-    return await start(update, context)
+    keyboard = [
+        [InlineKeyboardButton("🔄 Check Again", callback_data="check_perms")],
+        [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        report, reply_markup=reply_markup, parse_mode="Markdown"
+    )
+    return ConversationHandler.END
 
 
 async def restart(update: Update, context: CallbackContext) -> int:
