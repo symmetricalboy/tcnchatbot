@@ -147,7 +147,22 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.Regex(r"@admin"), admin_mention))
 
     # Start the Bot
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    PORT = int(os.environ.get("PORT", "443"))
+    RAILWAY_PUBLIC_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+
+    if RAILWAY_PUBLIC_DOMAIN:
+        logger.info(
+            f"Starting webhook on port {PORT} for domain {RAILWAY_PUBLIC_DOMAIN}"
+        )
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            webhook_url=f"https://{RAILWAY_PUBLIC_DOMAIN}",
+            allowed_updates=Update.ALL_TYPES,
+        )
+    else:
+        logger.info("Local environment detected. Starting long polling.")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
