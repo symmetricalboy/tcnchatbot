@@ -19,17 +19,19 @@ TOPIC_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL = range(3)
 
 
 async def _resolve_chat_id(input_str: str, context: CallbackContext) -> int | None:
-    """Try to resolve a numeric string or a Telegram username to a chat ID."""
+    """Try to resolve a Telegram username to a chat ID. Rejects numeric IDs."""
     if not input_str:
         return None
 
+    # Check if the user tried to input a numeric ID
     try:
-        # If it's pure numbers or negative numbers, it's already an ID
-        return int(input_str)
+        int(input_str)
+        # If it parses as an int, they didn't provide a username
+        return None
     except ValueError:
         pass
 
-    # If it's a username, ensure it has @ and try to fetch it
+    # Ensure it's formatted as a username
     username = input_str if input_str.startswith("@") else f"@{input_str}"
 
     try:
@@ -47,10 +49,14 @@ async def config_start(update: Update, context: CallbackContext) -> int:
 
     await query.message.reply_text(
         "⚙️ **Owner Configuration Menu**\n\n"
-        "Let's set up the required group and channels. First, please send me the ID "
-        "or username (e.g., `@mygroup`) of your **1 public topic group**.\n\n"
+        "Let's set up the required group and channels.\n\n"
+        "**CRITICAL REQUIREMENT:** For security and routing consistency, **ALL** groups and channels "
+        "(including the private admin group) **MUST HAVE A PUBLIC @USERNAME SET** to be linked "
+        "to this bot. We strongly advise that you turn on 'Approve New Members' for the Admin Group "
+        "so the public username does not expose it to unauthorized users.\n\n"
+        "First, please send me the **@username** of your **1 public topic group**.\n\n"
         "Note: You must add me to this group and give me ALL permissions (except 'Remain Anonymous').\n\n"
-        "Please send the Group ID or username now (or type /cancel to abort):",
+        "Please send the group @username now (or type /cancel to abort):",
         parse_mode="Markdown",
     )
     return TOPIC_GROUP
@@ -63,17 +69,19 @@ async def get_topic_group(update: Update, context: CallbackContext) -> int:
 
     if group_id is None:
         await update.message.reply_text(
-            "Could not resolve the group. Please provide a valid integer ID or a public @username."
+            "Could not resolve the group. Please provide a valid public @username. "
+            "(Numeric IDs are no longer supported for security reasons)."
         )
         return TOPIC_GROUP
 
     context.user_data["topic_group"] = group_id
 
     await update.message.reply_text(
-        f"Saved Public Topic Group ID: {group_id}\n\n"
-        "Next, please send me the ID or username of your **1 public channel**.\n\n"
+        f"✅ Validated Public Topic Group (ID: `{group_id}`)\n\n"
+        "Next, please send me the **@username** of your **1 public channel**.\n\n"
         "Note: You must also add me to this channel as an admin with ALL permissions (except 'Remain Anonymous').\n\n"
-        "Please send the Channel ID now:",
+        "Please send the channel @username now:",
+        parse_mode="Markdown",
     )
     return PUBLIC_CHANNEL
 
@@ -85,17 +93,21 @@ async def get_public_channel(update: Update, context: CallbackContext) -> int:
 
     if channel_id is None:
         await update.message.reply_text(
-            "Could not resolve the channel. Please provide a valid integer ID or a public @username."
+            "Could not resolve the channel. Please provide a valid public @username. "
+            "(Numeric IDs are no longer supported for security reasons)."
         )
         return PUBLIC_CHANNEL
 
     context.user_data["public_channel"] = channel_id
 
     await update.message.reply_text(
-        f"Saved Public Channel ID: {channel_id}\n\n"
-        "Finally, please send me the ID of your **1 private admin channel**.\n\n"
+        f"✅ Validated Public Channel (ID: `{channel_id}`)\n\n"
+        "Finally, please send me the **@username** of your **1 private admin channel**.\n\n"
+        "*(Reminder: You must set a public link/username for your admin channel so the bot can link to it. "
+        "Please turn on 'Approve New Members' in the admin channel to keep it private!)*\n\n"
         "Note: I need ALL admin permissions here as well, except 'Remain Anonymous'.\n\n"
-        "Please send the Admin Channel ID now:",
+        "Please send the admin @username now:",
+        parse_mode="Markdown",
     )
     return ADMIN_CHANNEL
 
@@ -107,7 +119,8 @@ async def get_admin_channel(update: Update, context: CallbackContext) -> int:
 
     if admin_channel_id is None:
         await update.message.reply_text(
-            "Could not resolve the admin channel. Please provide a valid integer ID or a public @username."
+            "Could not resolve the admin channel. Please provide a valid public @username. "
+            "(Numeric IDs are no longer supported for security reasons)."
         )
         return ADMIN_CHANNEL
 
