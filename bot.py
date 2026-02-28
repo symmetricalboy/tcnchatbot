@@ -4,6 +4,11 @@ Telegram bot that alerts group admins when '@admin' is mentioned.
 
 import logging
 import os
+import warnings
+
+# Suppress Python 3.14 SyntaxWarning from anyio dependency
+warnings.filterwarnings("ignore", category=SyntaxWarning, message=".*'return' in a 'finally' block.*")
+
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -22,6 +27,8 @@ from dotenv import load_dotenv
 
 from database import db
 from handlers.init_config import get_config_conversation_handler
+from handlers.verification import welcome_new_member, verify_user
+from handlers.service_cleaner import clean_service_messages
 
 # Enable logging
 logging.basicConfig(
@@ -79,10 +86,10 @@ async def admin_mention(update: Update, context) -> None:
         if not config:
             return
 
-        topic_group_id = config.get("topic_group_id")
+        main_group_id = config.get("main_group_id")
 
-        # If no public topic group is configured, or if the current chat doesn't match, ignore the mention
-        if not topic_group_id or chat.id != topic_group_id:
+        # If no public main group is configured, or if the current chat doesn't match, ignore the mention
+        if not main_group_id or chat.id != main_group_id:
             return
 
         admins = await chat.get_administrators()
@@ -100,29 +107,7 @@ async def admin_mention(update: Update, context) -> None:
         )
 
 
-async def start(update: Update, context) -> None:
-    """Send README content and owner menu when standard start command is issued."""
-    if update.effective_chat.type != "private":
-        return
 
-    # Check if the database is fully configured
-    config = await db.get_config()
-    is_configured = False
-    if config:
-        if (
-            config.get("topic_group_id")
-            and config.get("channel_id")
-            and config.get("admin_group_id")
-        ):
-            is_configured = True
-
-    if not is_configured:
-        # If not configured, auto-start the config process
-        from handlers.init_config import config_start
-
-        # We need to adapt config_start to handle both Message and CallbackQuery
-        # For a cleaner integration, let's keep start logic here but pass it to the handler
-        pass  # Wait, we need to rewrite this completely. Let's undo and approach via init_config.py
 
 
 async def post_init(application: Application) -> None:
@@ -150,25 +135,56 @@ def main() -> None:
     application.add_handler(TypeHandler(Update, auth_middleware), group=-1)
 
     application.add_handler(get_config_conversation_handler())
-    application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.Regex(r"@admin"), admin_mention))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+    application.add_handler(MessageHandler(filters.StatusUpdate.ALL, clean_service_messages))
+    application.add_handler(CallbackQueryHandler(verify_user, pattern=r"^verify_"))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))
     RAILWAY_PUBLIC_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+    PUBLIC_DOMAIN = RAILWAY_PUBLIC_DOMAIN if RAILWAY_PUBLIC_DOMAIN else os.environ.get("PUBLIC_DOMAIN")
 
-    if RAILWAY_PUBLIC_DOMAIN:
+    # Check and manage existing webhook
+    import urllib.request
+    import json
+    
+    webhook_info_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+    expected_webhook_url = f"https://{PUBLIC_DOMAIN}" if PUBLIC_DOMAIN else None
+    
+    try:
+        with urllib.request.urlopen(webhook_info_url) as response:
+            data = json.loads(response.read().decode())
+            if data.get("ok") and data.get("result", {}).get("url"):
+                current_webhook_url = data["result"]["url"]
+                
+                if expected_webhook_url and current_webhook_url == expected_webhook_url:
+                    logger.info(f"Existing webhook already matches expected domain: {expected_webhook_url}")
+                else:
+                    logger.info(f"Existing webhook {current_webhook_url} does not match expected (or polling requested). Attempting to delete...")
+                    
+                    delete_webhook_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook"
+                    with urllib.request.urlopen(delete_webhook_url) as del_response:
+                        del_data = json.loads(del_response.read().decode())
+                        if del_data.get("ok"):
+                            logger.info("Webhook deleted successfully.")
+                        else:
+                            logger.warning(f"Failed to delete webhook: {del_data}")
+    except Exception as e:
+        logger.warning(f"Error checking/deleting webhook: {e}")
+
+    if PUBLIC_DOMAIN:
         logger.info(
-            f"Starting webhook on port {PORT} for domain {RAILWAY_PUBLIC_DOMAIN}"
+            f"Starting webhook on port {PORT} for domain {PUBLIC_DOMAIN}"
         )
         application.run_webhook(
             listen="0.0.0.0",
             port=PORT,
-            webhook_url=f"https://{RAILWAY_PUBLIC_DOMAIN}",
+            webhook_url=expected_webhook_url,
             allowed_updates=Update.ALL_TYPES,
         )
     else:
-        logger.info("Local environment detected. Starting long polling.")
+        logger.info("No public domain provided. Proceeding with long polling (getUpdates).")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

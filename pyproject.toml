@@ -6,8 +6,8 @@ authors = ["symmetricalboy <email@symmetricalboy.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.13"
-python-telegram-bot = {version = "^22.6", extras = ["webhooks"]}
+python = "^3.14"
+python-telegram-bot = {version = "^22.6", extras = ["webhooks", "job-queue"]}
 python-dotenv = "^1.0.1"
 asyncpg = "^0.31.0"
 

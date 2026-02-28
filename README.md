@@ -1,16 +1,16 @@
-# Mod Mention Bot
+# TCNchatbot
 
-[@modmentionbot](https://t.me/modmentionbot)
+[@TCNchatbot](https://t.me/TCNchatbot)
 
-A simple Telegram bot that allows users to get the attention of all admins in a group chat by mentioning @admin in their messages.
+A complex Telegram bot configured for community moderation and management.
 
 ## Features
 
-- Simple @admin mention functionality that pings all admins in a group chat
-- Works in any group chat with no admin privileges required
-- Notifies all group admins with invisible tags for a clean looking message
-- Easy to set up and use; just add it to your group and start mentioning @admin!
+- **Welcome Verification**: Sends a welcome message with community rules to new users and restricts them until they click a verification button. Kicks unverified users after 5 minutes.
+- **Service Message Cleaner**: Automatically deletes Telegram service messages (like "User joined the group") to keep the chat clean.
+- **Admin Alerts**: Allows users to get the attention of all admins in the group chat by mentioning `@admin`.
+- **Modular Architecture**: Easy to maintain and add new features.
+- **Database Integrated**: Configurations are saved to the database and adjustable by the owner.
 
 
-
-by [@symmetricalboy](https://t.me/symmetricalboy)
+by [@symmboy](https://t.me/symmboy)

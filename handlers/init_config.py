@@ -17,9 +17,9 @@ from database import db
 logger = logging.getLogger(__name__)
 
 # Define conversation states
-TOPIC_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL = range(3)
+MAIN_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL = range(3)
 # Additional states for individual edits
-EDIT_TOPIC, EDIT_CHANNEL, EDIT_ADMIN = range(3, 6)
+EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME = range(3, 7)
 
 
 async def _resolve_chat_id(input_str: str, context: CallbackContext) -> int | None:
@@ -56,7 +56,7 @@ async def start(update: Update, context: CallbackContext) -> int:
     is_configured = False
     if config:
         if (
-            config.get("topic_group_id")
+            config.get("main_group_id")
             and config.get("channel_id")
             and config.get("admin_group_id")
         ):
@@ -68,14 +68,14 @@ async def start(update: Update, context: CallbackContext) -> int:
             "⚙️ **Welcome! Let's initialize your bot configuration.**\n\n"
             "**CRITICAL REQUIREMENT:** For security and routing consistency, **ALL** groups and channels "
             "(including the admin group) **MUST HAVE A PUBLIC @USERNAME SET** to be linked "
-            "to this bot. We strongly advise that you turn on 'Approve New Members' for the admin group "
+            "linked to this bot. We strongly advise that you turn on 'Approve New Members' for the admin group "
             "so the public username does not expose it to unauthorized users.\n\n"
-            "First, please send me the **@username** of your **topic group**.\n\n"
+            "First, please send me the **@username** of your **main group**.\n\n"
             "Note: You must add me to this group and give me ALL permissions (except 'Remain Anonymous').\n\n"
             "Please send the group @username now (or type /restart to abort):",
             parse_mode="Markdown",
         )
-        return TOPIC_GROUP
+        return MAIN_GROUP
     else:
         # Show main owner menu
         keyboard = [
@@ -100,9 +100,10 @@ async def group_menu(update: Update, context: CallbackContext) -> int:
     await query.answer()
 
     keyboard = [
-        [InlineKeyboardButton("🔄 Change Topic Group", callback_data="edit_topic")],
+        [InlineKeyboardButton("🔄 Change Main Group", callback_data="edit_main")],
         [InlineKeyboardButton("🔄 Change Channel", callback_data="edit_channel")],
         [InlineKeyboardButton("🔄 Change Admin Group", callback_data="edit_admin")],
+        [InlineKeyboardButton("💬 Edit Welcome Msg", callback_data="edit_welcome")],
         [InlineKeyboardButton("🛡️ Check Permissions", callback_data="check_perms")],
         [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")],
     ]
@@ -136,8 +137,8 @@ async def back_to_main(update: Update, context: CallbackContext) -> int:
     return ConversationHandler.END
 
 
-async def get_topic_group(update: Update, context: CallbackContext) -> int:
-    """Handle topic group input and ask for public channel."""
+async def get_main_group(update: Update, context: CallbackContext) -> int:
+    """Handle main group input and ask for public channel."""
     group_input = update.message.text.strip()
     group_id = await _resolve_chat_id(group_input, context)
 
@@ -146,12 +147,12 @@ async def get_topic_group(update: Update, context: CallbackContext) -> int:
             "Could not resolve the group. Please provide a valid public @username. "
             "(Numeric IDs are no longer supported for security reasons)."
         )
-        return TOPIC_GROUP
+        return MAIN_GROUP
 
-    context.user_data["topic_group"] = group_id
+    context.user_data["main_group"] = group_id
 
     await update.message.reply_text(
-        f"✅ Validated Topic Group (ID: `{group_id}`)\n\n"
+        f"✅ Validated Main Group (ID: `{group_id}`)\n\n"
         "Next, please send me the **@username** of your **channel**.\n\n"
         "Note: You must also add me to this channel as an admin with ALL permissions (except 'Remain Anonymous').\n\n"
         "Please send the channel @username now:",
@@ -199,12 +200,12 @@ async def get_admin_channel(update: Update, context: CallbackContext) -> int:
         return ADMIN_CHANNEL
 
     # Retrieve all inputs from context
-    topic_group_id = context.user_data.get("topic_group")
+    main_group_id = context.user_data.get("main_group")
     channel_id = context.user_data.get("public_channel")
 
     try:
         await db.update_config(
-            topic_group_id=topic_group_id,
+            main_group_id=main_group_id,
             channel_id=channel_id,
             admin_group_id=admin_group_id,
         )
@@ -212,7 +213,7 @@ async def get_admin_channel(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text(
             "Configuration Complete!\n\n"
             "I have updated the database with the following IDs:\n"
-            f"- Topic Group: {topic_group_id}\n"
+            f"- Main Group: {main_group_id}\n"
             f"- Channel: {channel_id}\n"
             f"- Admin Group: {admin_group_id}\n\n"
             "Please ensure I have been added to all of these with ALL permissions (except anonymous).\n"
@@ -231,22 +232,22 @@ async def get_admin_channel(update: Update, context: CallbackContext) -> int:
     return await start(update, context)  # Fallback to showing main menu
 
 
-async def prompt_edit_topic(update: Update, context: CallbackContext) -> int:
-    """Prompt the user for a new Topic Group username."""
+async def prompt_edit_main(update: Update, context: CallbackContext) -> int:
+    """Prompt the user for a new Main Group username."""
     query = update.callback_query
     await query.answer()
 
     await query.message.reply_text(
-        "📝 **Change Topic Group**\n\n"
-        "Please send me the **@username** of your new **topic group**.\n\n"
+        "📝 **Change Main Group**\n\n"
+        "Please send me the **@username** of your new **main group**.\n\n"
         "*(Type /restart to cancel this edit and return to the main menu)*",
         parse_mode="Markdown",
     )
-    return EDIT_TOPIC
+    return EDIT_MAIN
 
 
-async def save_edit_topic(update: Update, context: CallbackContext) -> int:
-    """Save the new Topic Group."""
+async def save_edit_main(update: Update, context: CallbackContext) -> int:
+    """Save the new Main Group."""
     group_input = update.message.text.strip()
     group_id = await _resolve_chat_id(group_input, context)
 
@@ -255,16 +256,16 @@ async def save_edit_topic(update: Update, context: CallbackContext) -> int:
             "Could not resolve the group. Please provide a valid public @username. "
             "(Numeric IDs are no longer supported for security reasons)."
         )
-        return EDIT_TOPIC
+        return EDIT_MAIN
 
     try:
-        await db.update_config(topic_group_id=group_id)
+        await db.update_config(main_group_id=group_id)
         await update.message.reply_text(
-            f"✅ Topic Group updated successfully (ID: `{group_id}`).",
+            f"✅ Main Group updated successfully (ID: `{group_id}`).",
             parse_mode="Markdown",
         )
     except Exception as e:
-        logger.error(f"Failed to update Topic Group: {e}")
+        logger.error(f"Failed to update Main Group: {e}")
         await update.message.reply_text("Database update failed.")
 
     return await start(update, context)
@@ -358,7 +359,7 @@ async def check_permissions(update: Update, context: CallbackContext) -> int:
         await query.message.reply_text("Database is unconfigured.")
         return ConversationHandler.END
 
-    topic_id = config.get("topic_group_id")
+    main_group_id = config.get("main_group_id")
     channel_id = config.get("channel_id")
     admin_id = config.get("admin_group_id")
 
@@ -426,7 +427,7 @@ async def check_permissions(update: Update, context: CallbackContext) -> int:
                 f"❌ **{chat_name}**: Error Accessing (Is the bot a member?) - `{e}`"
             )
 
-    await _check_chat(topic_id, "Topic Group")
+    await _check_chat(main_group_id, "Main Group")
     await _check_chat(channel_id, "Channel")
     await _check_chat(admin_id, "Admin Group")
 
@@ -453,6 +454,46 @@ async def restart(update: Update, context: CallbackContext) -> int:
     return ConversationHandler.END
 
 
+async def prompt_edit_welcome(update: Update, context: CallbackContext) -> int:
+    """Prompt the user for a new Welcome Message."""
+    query = update.callback_query
+    await query.answer()
+
+    config = await db.get_config()
+    current_msg = config.get("welcome_message") if config else "Not set"
+
+    await query.message.reply_text(
+        f"💬 **Change Welcome Message**\n\n"
+        f"Here is your current welcome message:\n"
+        f"----------------------\n"
+        f"{current_msg}\n"
+        f"----------------------\n\n"
+        f"Please send me the **new welcome message text**. You can use `{{mention}}` "
+        f"to mention the user.\n\n"
+        f"*(Type /restart to cancel this edit and return to the main menu)*",
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
+    return EDIT_WELCOME
+
+
+async def save_edit_welcome(update: Update, context: CallbackContext) -> int:
+    """Save the new Welcome Message."""
+    welcome_input = update.message.text.strip()
+
+    try:
+        await db.update_config(welcome_message=welcome_input)
+        await update.message.reply_text(
+            f"✅ Welcome message updated successfully.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"Failed to update Welcome Message: {e}")
+        await update.message.reply_text("Database update failed.")
+
+    return await start(update, context)
+
+
 # Note: Additional edit states and check_perms will be implemented in subsequent functions.
 
 
@@ -463,13 +504,14 @@ def get_config_conversation_handler() -> ConversationHandler:
             CallbackQueryHandler(group_menu, pattern="^group_menu$"),
             CallbackQueryHandler(back_to_main, pattern="^back_main$"),
             CallbackQueryHandler(check_permissions, pattern="^check_perms$"),
-            CallbackQueryHandler(prompt_edit_topic, pattern="^edit_topic$"),
+            CallbackQueryHandler(prompt_edit_main, pattern="^edit_main$"),
             CallbackQueryHandler(prompt_edit_channel, pattern="^edit_channel$"),
             CallbackQueryHandler(prompt_edit_admin, pattern="^edit_admin$"),
+            CallbackQueryHandler(prompt_edit_welcome, pattern="^edit_welcome$"),
         ],
         states={
-            TOPIC_GROUP: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_topic_group)
+            MAIN_GROUP: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_main_group)
             ],
             PUBLIC_CHANNEL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_public_channel)
@@ -477,14 +519,17 @@ def get_config_conversation_handler() -> ConversationHandler:
             ADMIN_CHANNEL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_admin_channel)
             ],
-            EDIT_TOPIC: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_topic)
+            EDIT_MAIN: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_main)
             ],
             EDIT_CHANNEL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_channel)
             ],
             EDIT_ADMIN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_admin)
+            ],
+            EDIT_WELCOME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_welcome)
             ],
         },
         fallbacks=[CommandHandler("restart", restart)],

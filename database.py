@@ -35,12 +35,15 @@ class Database:
                 """
                 CREATE TABLE IF NOT EXISTS bot_config (
                     id INTEGER PRIMARY KEY DEFAULT 1,
-                    topic_group_id BIGINT,
+                    main_group_id BIGINT,
                     channel_id BIGINT,
-                    admin_group_id BIGINT
+                    admin_group_id BIGINT,
+                    welcome_message TEXT
                 );
                 
-                INSERT INTO bot_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+                INSERT INTO bot_config (id, welcome_message) 
+                VALUES (1, 'Welcome {mention}!\n\n📚 Community Topics:\n💬 Chat - General discussion\n❓ FAQ - Frequently asked questions\n⚠️ Issues - Report problems\n💡 Feedback - Share ideas\n\n📜 Community Rules:\n- Be polite and respectful\n- No spam or unwanted advertising\n- Follow moderator instructions\n\n🎮 Enjoy your time in The Clean Network Community!') 
+                ON CONFLICT (id) DO NOTHING;
             """
             )
 
@@ -55,9 +58,10 @@ class Database:
             return False
 
         valid_keys = {
-            "topic_group_id",
+            "main_group_id",
             "channel_id",
             "admin_group_id",
+            "welcome_message",
         }
         updates = []
         values = []
