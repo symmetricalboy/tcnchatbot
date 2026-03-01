@@ -41,8 +41,23 @@ class Database:
                     welcome_message TEXT
                 );
                 
+                ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS cxp_topic_id BIGINT;
+                
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    cxp INTEGER DEFAULT 0,
+                    last_message_time TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS messages (
+                    chat_id BIGINT,
+                    message_id BIGINT,
+                    user_id BIGINT,
+                    PRIMARY KEY (chat_id, message_id)
+                );
+                
                 INSERT INTO bot_config (id, welcome_message) 
-                VALUES (1, 'Welcome {mention}!\n\n📚 Community Topics:\n💬 Chat - General discussion\n❓ FAQ - Frequently asked questions\n⚠️ Issues - Report problems\n💡 Feedback - Share ideas\n\n📜 Community Rules:\n- Be polite and respectful\n- No spam or unwanted advertising\n- Follow moderator instructions\n\n🎮 Enjoy your time in The Clean Network Community!') 
+                VALUES (1, 'Welcome {mention}!\n\n📜 Community Rules:\n- Be polite and respectful\n- No spam or unwanted advertising\n- Follow moderator instructions\n- Please use the appropriate topics for your discussions\n\n🎮 Enjoy your time in The Clean Network Community!') 
                 ON CONFLICT (id) DO NOTHING;
             """
             )
@@ -62,6 +77,7 @@ class Database:
             "channel_id",
             "admin_group_id",
             "welcome_message",
+            "cxp_topic_id",
         }
         updates = []
         values = []
@@ -81,5 +97,62 @@ class Database:
             await conn.execute(query, *values)
             return True
 
+
+    async def get_user(self, user_id):
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            user = await conn.fetchrow("SELECT * FROM users WHERE user_id = $1", user_id)
+            if not user:
+                await conn.execute("INSERT INTO users (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", user_id)
+                user = await conn.fetchrow("SELECT * FROM users WHERE user_id = $1", user_id)
+            return user
+
+    async def update_user_cxp(self, user_id, delta_cxp, update_timestamp=False):
+        if not self.pool:
+            return False
+        async with self.pool.acquire() as conn:
+            if update_timestamp:
+                await conn.execute(
+                    "UPDATE users SET cxp = cxp + $2, last_message_time = CURRENT_TIMESTAMP WHERE user_id = $1", 
+                    user_id, delta_cxp
+                )
+            else:
+                await conn.execute(
+                    "UPDATE users SET cxp = cxp + $2 WHERE user_id = $1", 
+                    user_id, delta_cxp
+                )
+            return True
+
+    async def get_user_rank(self, cxp):
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            count = await conn.fetchval("SELECT COUNT(*) FROM users WHERE cxp > $1", cxp)
+            return count + 1
+
+    async def get_leaderboard(self, limit=3):
+        if not self.pool:
+            return []
+        async with self.pool.acquire() as conn:
+            return await conn.fetch("SELECT * FROM users ORDER BY cxp DESC LIMIT $1", limit)
+
+    async def record_message(self, chat_id, message_id, user_id):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO messages (chat_id, message_id, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                chat_id, message_id, user_id
+            )
+            
+    async def get_message_author(self, chat_id, message_id):
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT user_id FROM messages WHERE chat_id = $1 AND message_id = $2",
+                chat_id, message_id
+            )
 
 db = Database()

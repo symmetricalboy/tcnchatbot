@@ -16,10 +16,10 @@ from telegram.ext import (
     CommandHandler,
     TypeHandler,
     filters,
-    TypeHandler,
     filters,
     ApplicationHandlerStop,
     CallbackQueryHandler,
+    MessageReactionHandler,
 )
 from telegram.constants import ParseMode
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -29,6 +29,7 @@ from database import db
 from handlers.init_config import get_config_conversation_handler
 from handlers.verification import welcome_new_member, verify_user
 from handlers.service_cleaner import clean_service_messages
+from handlers.cxp import track_message_activity, evaluate_reaction, user_stats_cmd, leaderboard_cmd
 
 # Enable logging
 logging.basicConfig(
@@ -139,6 +140,12 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.StatusUpdate.ALL, clean_service_messages))
     application.add_handler(CallbackQueryHandler(verify_user, pattern=r"^verify_"))
+    
+    # CXP Handlers
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, track_message_activity), group=1)
+    application.add_handler(MessageReactionHandler(evaluate_reaction))
+    application.add_handler(CommandHandler(["me", "level", "cxp", "rank"], user_stats_cmd))
+    application.add_handler(CommandHandler(["leaderboard", "leaderboards", "top"], leaderboard_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))

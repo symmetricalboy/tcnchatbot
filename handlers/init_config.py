@@ -1,4 +1,5 @@
 import logging
+import re
 from telegram import Update
 from telegram.ext import (
     CommandHandler,
@@ -11,15 +12,37 @@ from telegram.ext import (
 )
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+import warnings
+from telegram.warnings import PTBUserWarning
 
 from database import db
 
 logger = logging.getLogger(__name__)
 
 # Define conversation states
-MAIN_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL = range(3)
+MAIN_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL, CXP_TOPIC = range(4)
 # Additional states for individual edits
-EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME = range(3, 7)
+EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME, EDIT_CXP = range(4, 9)
+
+async def _extract_topic_id(message) -> int | None:
+    """Extract topic ID from a forwarded message or topic link."""
+    if getattr(message, 'message_thread_id', None):
+        return message.message_thread_id
+        
+    text = message.text.strip() if message.text else ""
+    try:
+        return int(text)
+    except ValueError:
+        pass
+        
+    match = re.search(r't\.me/(?:c/\d+/|[\w_]+/)?(\d+)', text)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+            
+    return None
 
 
 async def _resolve_chat_id(input_str: str, context: CallbackContext) -> int | None:
@@ -104,6 +127,7 @@ async def group_menu(update: Update, context: CallbackContext) -> int:
         [InlineKeyboardButton("🔄 Change Channel", callback_data="edit_channel")],
         [InlineKeyboardButton("🔄 Change Admin Group", callback_data="edit_admin")],
         [InlineKeyboardButton("💬 Edit Welcome Msg", callback_data="edit_welcome")],
+        [InlineKeyboardButton("🎯 Edit CXP Topic", callback_data="edit_cxp")],
         [InlineKeyboardButton("🛡️ Check Permissions", callback_data="check_perms")],
         [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")],
     ]
@@ -188,7 +212,7 @@ async def get_public_channel(update: Update, context: CallbackContext) -> int:
 
 
 async def get_admin_channel(update: Update, context: CallbackContext) -> int:
-    """Handle admin channel input, save to database, and finish."""
+    """Handle admin channel input, save to context, ask for CXP topic."""
     admin_channel_input = update.message.text.strip()
     admin_group_id = await _resolve_chat_id(admin_channel_input, context)
 
@@ -199,15 +223,39 @@ async def get_admin_channel(update: Update, context: CallbackContext) -> int:
         )
         return ADMIN_CHANNEL
 
-    # Retrieve all inputs from context
+    context.user_data["admin_channel"] = admin_group_id
+
+    await update.message.reply_text(
+        f"✅ Validated Admin Group (ID: `{admin_group_id}`)\n\n"
+        "Now, please provide the link to the **CXP Dedicated Topic** inside the main group.\n"
+        "You can get this by going to your main group, right clicking on the topic, and selecting 'Copy Link'.\n"
+        "Alternatively, you can forward any message from that topic to me.\n\n"
+        "Please send the topic link or forwarded message now:",
+        parse_mode="Markdown",
+    )
+    return CXP_TOPIC
+
+async def get_cxp_topic(update: Update, context: CallbackContext) -> int:
+    """Handle CXP topic input, save config to database, and finish."""
+    topic_id = await _extract_topic_id(update.message)
+
+    if topic_id is None:
+        await update.message.reply_text(
+            "Could not extract a Topic ID. Please send a valid topic link (e.g. https://t.me/c/1234/56) "
+            "or forward a message directly from the topic."
+        )
+        return CXP_TOPIC
+
     main_group_id = context.user_data.get("main_group")
     channel_id = context.user_data.get("public_channel")
+    admin_group_id = context.user_data.get("admin_channel")
 
     try:
         await db.update_config(
             main_group_id=main_group_id,
             channel_id=channel_id,
             admin_group_id=admin_group_id,
+            cxp_topic_id=topic_id,
         )
 
         await update.message.reply_text(
@@ -215,7 +263,8 @@ async def get_admin_channel(update: Update, context: CallbackContext) -> int:
             "I have updated the database with the following IDs:\n"
             f"- Main Group: {main_group_id}\n"
             f"- Channel: {channel_id}\n"
-            f"- Admin Group: {admin_group_id}\n\n"
+            f"- Admin Group: {admin_group_id}\n"
+            f"- CXP Topic ID: {topic_id}\n\n"
             "Please ensure I have been added to all of these with ALL permissions (except anonymous).\n"
             "Have a great day!"
         )
@@ -226,10 +275,8 @@ async def get_admin_channel(update: Update, context: CallbackContext) -> int:
             "Please check the logs and try again."
         )
 
-    # Clear user data
     context.user_data.clear()
-
-    return await start(update, context)  # Fallback to showing main menu
+    return await start(update, context)
 
 
 async def prompt_edit_main(update: Update, context: CallbackContext) -> int:
@@ -431,6 +478,12 @@ async def check_permissions(update: Update, context: CallbackContext) -> int:
     await _check_chat(channel_id, "Channel")
     await _check_chat(admin_id, "Admin Group")
 
+    cxp_topic_id = config.get("cxp_topic_id")
+    if cxp_topic_id:
+        results.append(f"✅ **CXP Topic ID Configured**: `{cxp_topic_id}`")
+    else:
+        results.append("❌ **CXP Topic**: Not Configured")
+
     report = "🛡️ **Permission Check Results**\n\n" + "\n\n".join(results)
 
     keyboard = [
@@ -494,10 +547,47 @@ async def save_edit_welcome(update: Update, context: CallbackContext) -> int:
     return await start(update, context)
 
 
+async def prompt_edit_cxp(update: Update, context: CallbackContext) -> int:
+    """Prompt the user for a new CXP Topic."""
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.reply_text(
+        "📝 **Change CXP Topic**\n\n"
+        "Please send me the link to your **CXP Dedicated Topic**, or forward a message from it.\n\n"
+        "*(Type /restart to cancel this edit and return to the main menu)*",
+        parse_mode="Markdown",
+    )
+    return EDIT_CXP
+
+
+async def save_edit_cxp(update: Update, context: CallbackContext) -> int:
+    """Save the new CXP Topic ID."""
+    topic_id = await _extract_topic_id(update.message)
+
+    if topic_id is None:
+        await update.message.reply_text(
+            "Could not extract a Topic ID. Please send a valid topic link or forward a message."
+        )
+        return EDIT_CXP
+
+    try:
+        await db.update_config(cxp_topic_id=topic_id)
+        await update.message.reply_text(
+            f"✅ CXP Topic updated successfully (ID: `{topic_id}`).",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"Failed to update CXP Topic ID: {e}")
+        await update.message.reply_text("Database update failed.")
+
+    return await start(update, context)
+
 # Note: Additional edit states and check_perms will be implemented in subsequent functions.
 
 
 def get_config_conversation_handler() -> ConversationHandler:
+    warnings.filterwarnings("ignore", category=PTBUserWarning)
     return ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
@@ -508,6 +598,7 @@ def get_config_conversation_handler() -> ConversationHandler:
             CallbackQueryHandler(prompt_edit_channel, pattern="^edit_channel$"),
             CallbackQueryHandler(prompt_edit_admin, pattern="^edit_admin$"),
             CallbackQueryHandler(prompt_edit_welcome, pattern="^edit_welcome$"),
+            CallbackQueryHandler(prompt_edit_cxp, pattern="^edit_cxp$"),
         ],
         states={
             MAIN_GROUP: [
@@ -518,6 +609,9 @@ def get_config_conversation_handler() -> ConversationHandler:
             ],
             ADMIN_CHANNEL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_admin_channel)
+            ],
+            CXP_TOPIC: [
+                MessageHandler(filters.ALL & ~filters.COMMAND, get_cxp_topic)
             ],
             EDIT_MAIN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_main)
@@ -530,6 +624,9 @@ def get_config_conversation_handler() -> ConversationHandler:
             ],
             EDIT_WELCOME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_welcome)
+            ],
+            EDIT_CXP: [
+                MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_cxp)
             ],
         },
         fallbacks=[CommandHandler("restart", restart)],
