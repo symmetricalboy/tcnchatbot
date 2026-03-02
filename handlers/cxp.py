@@ -445,9 +445,14 @@ async def resolve_username(
         chat = await context.bot.get_chat(username_str)
         return chat.id, chat.first_name or username_str
     except Exception as e:
-        logger.warning(
-            f"Failed to resolve username {username_str} via Telegram API: {e}"
-        )
+        # 4. Fallback to DB Tracker
+        # Database looks up by raw string without the @
+        clean_name = username_str.lstrip("@")
+        user_row = await db.get_user_by_username(clean_name)
+        if user_row:
+            return user_row.get("user_id"), username_str
+
+        logger.warning(f"Failed to resolve username {username_str} via API and DB: {e}")
         return None, None
 
 
@@ -598,7 +603,7 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
 
 
 async def get_id_cmd(update: Update, context: CallbackContext):
-    """Test command to explicitly check API username resolution."""
+    """Test command to explicitly check API/DB username resolution and reply parsing."""
     if (
         not update.effective_user
         or getattr(update.effective_user, "is_bot", True)
@@ -606,9 +611,23 @@ async def get_id_cmd(update: Update, context: CallbackContext):
     ):
         return
 
+    # 1. Check for replied-to message
+    if update.message.reply_to_message and getattr(
+        update.message.reply_to_message.from_user, "id", None
+    ):
+        target_user = update.message.reply_to_message.from_user
+        await update.message.reply_text(
+            f"Reply Resolution Success!\nName: {target_user.first_name}\nID: `{target_user.id}`",
+            parse_mode="Markdown",
+        )
+        return
+
+    # 2. Check for @username arguments
     args = context.args
     if not args:
-        await update.message.reply_text("Please provide a @username.")
+        await update.message.reply_text(
+            "Please provide a @username or reply to their message."
+        )
         return
 
     arg_str = args[0]
@@ -616,11 +635,13 @@ async def get_id_cmd(update: Update, context: CallbackContext):
 
     if resolved_id:
         await update.message.reply_text(
-            f"API Resolution Success!\nName: {resolved_name}\nID: `{resolved_id}`",
+            f"Resolution Success!\nName: {resolved_name}\nID: `{resolved_id}`",
             parse_mode="Markdown",
         )
     else:
-        await update.message.reply_text("Telegram API failed to resolve that handle.")
+        await update.message.reply_text(
+            "Failed to resolve that handle via Telegram API or DB Tracker."
+        )
 
 
 async def give_cxp_cmd(update: Update, context: CallbackContext):

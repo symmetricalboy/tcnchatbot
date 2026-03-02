@@ -6,12 +6,19 @@ from database import db
 
 logger = logging.getLogger(__name__)
 
-async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+async def welcome_new_member(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle new members: delete the service message, send welcome, restrict them."""
     config = await db.get_config()
     group_id = config.get("main_group_id") if config else None
 
-    if not group_id or not update.effective_chat or update.effective_chat.id != group_id:
+    if (
+        not group_id
+        or not update.effective_chat
+        or update.effective_chat.id != group_id
+    ):
         return
 
     if update.message and update.message.new_chat_members:
@@ -25,6 +32,10 @@ async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if new_member.is_bot:
                 continue
 
+            # Track username
+            if new_member.username:
+                await db.update_user_username(new_member.id, new_member.username)
+
             # Restrict user
             try:
                 await context.bot.restrict_chat_member(
@@ -37,25 +48,35 @@ async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 continue
 
             # Send welcome message
-            keyboard = [[InlineKeyboardButton("✅ I have read the rules!", callback_data=f"verify_{new_member.id}")]]
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "✅ I have read the rules!",
+                        callback_data=f"verify_{new_member.id}",
+                    )
+                ]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             if new_member.username:
                 mention = f"@{new_member.username}"
             else:
                 import html
+
                 escaped_name = html.escape(new_member.first_name)
                 mention = f'<a href="tg://user?id={new_member.id}">{escaped_name}</a>'
-            
+
             welcome_text = config.get("welcome_message") if config else None
             # fallback generic if blank
             if not welcome_text:
-                welcome_text = "Welcome {mention}! Please read the rules and click verification."
-            
+                welcome_text = (
+                    "Welcome {mention}! Please read the rules and click verification."
+                )
+
             try:
                 text = welcome_text.format(mention=mention)
             except KeyError:
-                # In case the welcome message has invalid format keys 
+                # In case the welcome message has invalid format keys
                 text = welcome_text + f" {mention}"
 
             msg = await context.bot.send_message(
@@ -148,7 +169,9 @@ async def verify_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.error(f"Failed to unrestrict user: {e}")
 
     # Remove the pending kick job
-    current_jobs = context.job_queue.get_jobs_by_name(f"kick_{target_user_id}_{query.message.message_id}")
+    current_jobs = context.job_queue.get_jobs_by_name(
+        f"kick_{target_user_id}_{query.message.message_id}"
+    )
     for job in current_jobs:
         job.schedule_removal()
 
