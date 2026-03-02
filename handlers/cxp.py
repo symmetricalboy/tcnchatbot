@@ -426,6 +426,10 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
 
     # Check for mention or text_mention
     if context.args:
+        # We are seeking a different user. Nullify the default target_id.
+        target_id = None
+        target_name = None
+
         # First check text_mentions
         entities = update.message.parse_entities(None)
 
@@ -443,13 +447,20 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
                     target_name = chat.first_name or text
                     break
                 except Exception:
-                    await update.message.reply_text(
-                        "Could not resolve that @username via Telegram. Please ensure it is correct."
-                    )
-                    return
+                    # Fallback to DB
+                    user_row = await db.get_user_by_username(text)
+                    if user_row:
+                        target_id = user_row.get("user_id")
+                        target_name = text
+                        break
+                    else:
+                        await update.message.reply_text(
+                            "Could not resolve that @username via Telegram. Please ensure it is correct."
+                        )
+                        return
 
         # Fallback if no entities were resolved to a different user, but an arg was provided
-        if target_id == update.effective_user.id and context.args:
+        if target_id is None:
             arg = context.args[0]
             if arg.startswith("@"):
                 try:
@@ -457,10 +468,21 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
                     target_id = chat.id
                     target_name = chat.first_name or arg
                 except Exception:
-                    await update.message.reply_text(
-                        "Could not resolve that @username via Telegram. Please ensure it is correct."
-                    )
-                    return
+                    user_row = await db.get_user_by_username(arg)
+                    if user_row:
+                        target_id = user_row.get("user_id")
+                        target_name = arg
+                    else:
+                        await update.message.reply_text(
+                            "Could not resolve that @username via Telegram. Please ensure it is correct."
+                        )
+                        return
+
+        if target_id is None:
+            await update.message.reply_text(
+                "Could not resolve a target user from the arguments provided."
+            )
+            return
 
     user_data = await db.get_user(target_id)
     if not user_data:
@@ -652,7 +674,11 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
                     target_name = chat.first_name or text
                     break
                 except Exception:
-                    pass
+                    user_row = await db.get_user_by_username(text)
+                    if user_row:
+                        target_id = user_row.get("user_id")
+                        target_name = text
+                        break
         # Fallback manual arg parsing if entity didn't match
         if target_id is None:
             for arg in args:
@@ -663,8 +689,11 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
                         target_id = chat.id
                         target_name = chat.first_name or arg
                     except Exception:
-                        pass
-                    break
+                        user_row = await db.get_user_by_username(arg)
+                        if user_row:
+                            target_id = user_row.get("user_id")
+                            target_name = arg
+                        break
 
     if target_id is None:
         await update.message.reply_text(
