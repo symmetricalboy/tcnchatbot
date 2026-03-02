@@ -193,7 +193,7 @@ class MemoryCache:
 MESSAGE_AUTHOR_CACHE = MemoryCache(5000)
 RATE_LIMIT_CACHE = MemoryCache(5000)
 
-MESSAGE_CXP = 100
+MESSAGE_CXP = 50
 POSITIVE_REACTION_BASE = 50
 NEGATIVE_REACTION_BASE = -50
 RATE_LIMIT_SECONDS = 60
@@ -589,7 +589,7 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
     msg = (
         "🌟 **CXP & Leveling System Help** 🌟\n\n"
         "**Earning CXP:**\n"
-        "• **Messages**: Earn `100 CXP` for chatting (limit 1 per minute).\n"
+        "• **Messages**: Earn `50 CXP` for chatting (limit 1 per minute).\n"
         "• **Reactions**: Earn or lose CXP when others react to your messages.\n"
         "  Positive emojis (thumbs up, hearts, fire, etc.) give `+50 CXP`.\n"
         "  Negative emojis (thumbs down, anger, stop, etc.) give `-50 CXP`.\n"
