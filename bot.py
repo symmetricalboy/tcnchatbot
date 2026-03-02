@@ -30,6 +30,7 @@ from handlers.cxp import (
     user_stats_cmd,
     leaderboard_cmd,
     cxp_help_cmd,
+    give_cxp_cmd,
 )
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
@@ -156,13 +157,10 @@ def main() -> None:
         group=1,
     )
     application.add_handler(MessageReactionHandler(evaluate_reaction))
-    application.add_handler(
-        CommandHandler(["me", "level", "cxp", "rank"], user_stats_cmd)
-    )
-    application.add_handler(
-        CommandHandler(["leaderboard", "leaderboards", "top"], leaderboard_cmd)
-    )
+    application.add_handler(CommandHandler("level", user_stats_cmd))
+    application.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
     application.add_handler(CommandHandler("help", cxp_help_cmd))
+    application.add_handler(CommandHandler("give", give_cxp_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))

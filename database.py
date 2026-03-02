@@ -46,8 +46,11 @@ class Database:
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
                     cxp INTEGER DEFAULT 0,
-                    last_message_time TIMESTAMP
+                    last_message_time TIMESTAMP,
+                    username VARCHAR(255)
                 );
+                
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(255);
 
                 CREATE TABLE IF NOT EXISTS messages (
                     chat_id BIGINT,
@@ -97,16 +100,40 @@ class Database:
             await conn.execute(query, *values)
             return True
 
-
     async def get_user(self, user_id):
         if not self.pool:
             return None
         async with self.pool.acquire() as conn:
-            user = await conn.fetchrow("SELECT * FROM users WHERE user_id = $1", user_id)
+            user = await conn.fetchrow(
+                "SELECT * FROM users WHERE user_id = $1", user_id
+            )
             if not user:
-                await conn.execute("INSERT INTO users (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", user_id)
-                user = await conn.fetchrow("SELECT * FROM users WHERE user_id = $1", user_id)
+                await conn.execute(
+                    "INSERT INTO users (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING",
+                    user_id,
+                )
+                user = await conn.fetchrow(
+                    "SELECT * FROM users WHERE user_id = $1", user_id
+                )
             return user
+
+    async def get_user_by_username(self, username: str):
+        if not self.pool:
+            return None
+        # remove @ if present
+        username = username.lstrip("@")
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                "SELECT * FROM users WHERE username ILIKE $1", username
+            )
+
+    async def update_user_username(self, user_id: int, username: str):
+        if not self.pool or not username:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET username = $2 WHERE user_id = $1", user_id, username
+            )
 
     async def update_user_cxp(self, user_id, delta_cxp, update_timestamp=False):
         if not self.pool:
@@ -114,13 +141,15 @@ class Database:
         async with self.pool.acquire() as conn:
             if update_timestamp:
                 await conn.execute(
-                    "UPDATE users SET cxp = cxp + $2, last_message_time = CURRENT_TIMESTAMP WHERE user_id = $1", 
-                    user_id, delta_cxp
+                    "UPDATE users SET cxp = cxp + $2, last_message_time = CURRENT_TIMESTAMP WHERE user_id = $1",
+                    user_id,
+                    delta_cxp,
                 )
             else:
                 await conn.execute(
-                    "UPDATE users SET cxp = cxp + $2 WHERE user_id = $1", 
-                    user_id, delta_cxp
+                    "UPDATE users SET cxp = cxp + $2 WHERE user_id = $1",
+                    user_id,
+                    delta_cxp,
                 )
             return True
 
@@ -128,14 +157,18 @@ class Database:
         if not self.pool:
             return None
         async with self.pool.acquire() as conn:
-            count = await conn.fetchval("SELECT COUNT(*) FROM users WHERE cxp > $1", cxp)
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM users WHERE cxp > $1", cxp
+            )
             return count + 1
 
     async def get_leaderboard(self, limit=3):
         if not self.pool:
             return []
         async with self.pool.acquire() as conn:
-            return await conn.fetch("SELECT * FROM users ORDER BY cxp DESC LIMIT $1", limit)
+            return await conn.fetch(
+                "SELECT * FROM users ORDER BY cxp DESC LIMIT $1", limit
+            )
 
     async def record_message(self, chat_id, message_id, user_id):
         if not self.pool:
@@ -143,16 +176,20 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 "INSERT INTO messages (chat_id, message_id, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-                chat_id, message_id, user_id
+                chat_id,
+                message_id,
+                user_id,
             )
-            
+
     async def get_message_author(self, chat_id, message_id):
         if not self.pool:
             return None
         async with self.pool.acquire() as conn:
             return await conn.fetchval(
                 "SELECT user_id FROM messages WHERE chat_id = $1 AND message_id = $2",
-                chat_id, message_id
+                chat_id,
+                message_id,
             )
+
 
 db = Database()

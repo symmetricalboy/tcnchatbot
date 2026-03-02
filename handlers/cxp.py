@@ -233,6 +233,8 @@ async def _process_db_message_and_cxp(
 ):
     """Background task to save the message and award CXP without blocking the chat."""
     await db.record_message(chat_id, msg_id, user.id)
+    if user.username:
+        await db.update_user_username(user.id, user.username)
 
     old_level = calculate_level(current_cxp)
     success = await db.update_user_cxp(user.id, MESSAGE_CXP, update_timestamp=True)
@@ -390,7 +392,9 @@ async def evaluate_reaction(update: Update, context: CallbackContext):
 
         old_level = calculate_level(author_data.get("cxp", 0))
         await db.update_user_cxp(author_id, total_delta)
-        new_level = calculate_level(author_data.get("cxp", 0) + total_delta)
+        new_data = await db.get_user(author_id)
+        new_cxp = new_data.get("cxp", 0)
+        new_level = calculate_level(new_cxp)
 
         if new_level > old_level:
             try:
@@ -403,7 +407,7 @@ async def evaluate_reaction(update: Update, context: CallbackContext):
 
 
 async def user_stats_cmd(update: Update, context: CallbackContext):
-    """Handler for /me, /level, /cxp, /rank."""
+    """Handler for /level."""
     if not update.effective_user or getattr(update.effective_user, "is_bot", True):
         return
 
@@ -417,9 +421,42 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
     ):
         return
 
-    user_id = update.effective_user.id
-    user_data = await db.get_user(user_id)
+    target_id = update.effective_user.id
+    target_name = update.effective_user.first_name
+
+    # Check for mention or text_mention
+    if context.args:
+        # First check text_mentions
+        entities = update.message.parse_entities(["text_mention"])
+        for ent, text in entities.items():
+            if ent.user:
+                target_id = ent.user.id
+                target_name = ent.user.first_name
+                break
+        else:
+            # Check for @username
+            arg = context.args[0]
+            if arg.startswith("@"):
+                # Try live API resolution first to handle changed usernames
+                try:
+                    chat = await context.bot.get_chat(arg)
+                    target_id = chat.id
+                    target_name = chat.first_name or arg
+                except Exception:
+                    # Fallback to DB
+                    user_row = await db.get_user_by_username(arg)
+                    if user_row:
+                        target_id = user_row.get("user_id")
+                        target_name = arg
+                    else:
+                        await update.message.reply_text(
+                            "Could not find that user. They may need to send a message first if they changed their username, or ensure the handle is correct."
+                        )
+                        return
+
+    user_data = await db.get_user(target_id)
     if not user_data:
+        await update.message.reply_text("No stats found for that user.")
         return
 
     cxp = user_data.get("cxp", 0)
@@ -429,7 +466,7 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
     next_level_cxp = 250 * (level + 1) * level
 
     msg = (
-        f"📊 **Statistics for {update.effective_user.first_name}**\n\n"
+        f"📊 **Statistics for {target_name}**\n\n"
         f"🏆 **Rank:** #{rank}\n"
         f"🔰 **Level:** {level}\n"
         f"✨ **CXP:** {cxp:,} / {next_level_cxp:,}"
@@ -439,9 +476,10 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
 
 
 async def leaderboard_cmd(update: Update, context: CallbackContext):
-    """Handler for /leaderboard, /leaderboards, /top."""
+    """Handler for /leaderboard. Shows top 10, skipping admins."""
     config = await db.get_config()
     cxp_topic_id = config.get("cxp_topic_id") if config else None
+    main_group_id = config.get("main_group_id") if config else None
 
     if (
         not update.message
@@ -450,15 +488,40 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
     ):
         return
 
-    top_users = await db.get_leaderboard(limit=3)
-    if not top_users:
+    # Fetch a wider net in case many are admins
+    top_candidates = await db.get_leaderboard(limit=50)
+    if not top_candidates:
         await update.message.reply_text("The leaderboard is currently empty!")
         return
 
-    msg = "🏆 **Global Leaderboard** 🏆\n\n"
+    actual_top_10 = []
+    for row in top_candidates:
+        if len(actual_top_10) >= 10:
+            break
 
-    medals = ["🥇", "🥈", "🥉"]
-    for i, row in enumerate(top_users):
+        u_id = row.get("user_id")
+
+        # Check if admin
+        is_admin = False
+        if main_group_id:
+            try:
+                member = await context.bot.get_chat_member(main_group_id, u_id)
+                if member.status in ("administrator", "creator"):
+                    is_admin = True
+            except Exception:
+                pass
+
+        if not is_admin:
+            actual_top_10.append(row)
+
+    if not actual_top_10:
+        await update.message.reply_text("No non-admin users found for the leaderboard.")
+        return
+
+    msg = "🏆 **Global Leaderboard (Top 10)** 🏆\n\n"
+
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    for i, row in enumerate(actual_top_10):
         u_id = row.get("user_id")
         cxp = row.get("cxp", 0)
         level = calculate_level(cxp)
@@ -497,8 +560,117 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
         "  Negative emojis (thumbs down, anger, stop, etc.) give `-50 CXP`.\n"
         "• **Influence**: Higher level users multiply the CXP of their reactions! Your vote carries more weight as you rank up.\n\n"
         "**Commands:**\n"
-        "• `/me`, `/level`, `/cxp`, `/rank` — View your own stats and rank.\n"
-        "• `/top`, `/leaderboard` — View the top 3 CXP leaders.\n"
+        "• `/level` — View your own stats and rank. Use `/level @username` to check someone else.\n"
+        "• `/leaderboard` — View the top 10 CXP leaders (Admins excluded).\n"
         "• `/help` — View this message."
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def give_cxp_cmd(update: Update, context: CallbackContext):
+    """Admin only: /give <val> [@username/reply]. Grant or remove CXP."""
+    if (
+        not update.effective_user
+        or getattr(update.effective_user, "is_bot", True)
+        or not update.message
+    ):
+        return
+
+    config = await db.get_config()
+    main_group_id = config.get("main_group_id") if config else None
+
+    # Must be in main group
+    if not main_group_id or update.effective_chat.id != main_group_id:
+        return
+
+    # Check admin privileges
+    try:
+        member = await context.bot.get_chat_member(
+            main_group_id, update.effective_user.id
+        )
+        if member.status not in ("administrator", "creator"):
+            return
+    except Exception:
+        return
+
+    # Parse args (could be /give 100 @user or /give @user 100)
+    args = context.args
+    if not args and not update.message.reply_to_message:
+        await update.message.reply_text(
+            "Usage: `/give <amount> [@username]` or reply to a message with `/give <amount>`",
+            parse_mode="Markdown",
+        )
+        return
+
+    target_id = None
+    target_name = None
+    delta_cxp = None
+
+    # Try reply target
+    if update.message.reply_to_message and getattr(
+        update.message.reply_to_message.from_user, "id", None
+    ):
+        target_id = update.message.reply_to_message.from_user.id
+        target_name = update.message.reply_to_message.from_user.first_name
+        if args:
+            try:
+                delta_cxp = int(args[0])
+            except ValueError:
+                pass
+
+    # Parse args if reply didn't resolve everything
+    if delta_cxp is None or target_id is None:
+        for arg in args:
+            try:
+                delta_cxp = int(arg)
+            except ValueError:
+                pass
+
+        # Parse target from entities
+        entities = update.message.parse_entities(["text_mention"])
+        for ent, text in entities.items():
+            if ent.user:
+                target_id = ent.user.id
+                target_name = ent.user.first_name
+                break
+        else:
+            # Parse from @username arg
+            for arg in args:
+                if arg.startswith("@"):
+                    # Try live API resolution first
+                    try:
+                        chat = await context.bot.get_chat(arg)
+                        target_id = chat.id
+                        target_name = chat.first_name or arg
+                    except Exception:
+                        user_row = await db.get_user_by_username(arg)
+                        if user_row:
+                            target_id = user_row.get("user_id")
+                            target_name = arg
+                    break
+
+    if target_id is None:
+        await update.message.reply_text(
+            "Could not resolve the target user. Please ensure the @username is correct or reply to their message."
+        )
+        return
+
+    if delta_cxp is None:
+        await update.message.reply_text("Invalid amount provided.")
+        return
+
+    # Safely fetch target and update
+    target_data = await db.get_user(target_id)
+    if not target_data:
+        await update.message.reply_text("Could not fetch target user data.")
+        return
+
+    old_level = calculate_level(target_data.get("cxp", 0))
+    await db.update_user_cxp(target_id, delta_cxp)
+    new_data = await db.get_user(target_id)
+    new_cxp = new_data.get("cxp", 0)
+    new_level = calculate_level(new_cxp)
+
+    action = "granted" if delta_cxp > 0 else "removed"
+    msg = f"✅ Successfully {action} {abs(delta_cxp):,} CXP to {target_name}. Their new total is {new_cxp:,} CXP (Level {new_level})."
+    await update.message.reply_text(msg)
