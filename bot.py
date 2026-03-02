@@ -31,6 +31,7 @@ from handlers.cxp import (
     leaderboard_cmd,
     cxp_help_cmd,
     give_cxp_cmd,
+    get_id_cmd,
 )
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
@@ -161,6 +162,7 @@ def main() -> None:
     application.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
     application.add_handler(CommandHandler("help", cxp_help_cmd))
     application.add_handler(CommandHandler("give", give_cxp_cmd))
+    application.add_handler(CommandHandler("id", get_id_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))

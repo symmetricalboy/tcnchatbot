@@ -406,6 +406,51 @@ async def evaluate_reaction(update: Update, context: CallbackContext):
                 )
 
 
+async def resolve_username(
+    input_str: str, update: Update, context: CallbackContext
+) -> tuple[int | None, str | None]:
+    """
+    Centralized function to resolve a username or text_mention to a User ID and Name.
+    Strictly relies on Telegram's API and message entities.
+    Returns (user_id, user_name).
+    """
+    if not input_str and not update.message:
+        return None, None
+
+    # 1. Check for explicit text_mentions (links without @ usernames)
+    if update.message:
+        entities = update.message.parse_entities(None)
+        for ent, text in entities.items():
+            if ent.type == "text_mention" and ent.user:
+                return ent.user.id, ent.user.first_name
+
+    if not input_str:
+        return None, None
+
+    # 2. Extract potential pure username
+    username_str = input_str
+    if update.message and update.message.text:
+        # If it's a mention entity, extract just the mention text
+        entities = update.message.parse_entities(["mention"])
+        for ent, text in entities.items():
+            username_str = text
+            break
+
+    # Format to ensure @
+    if not username_str.startswith("@"):
+        username_str = f"@{username_str}"
+
+    # 3. Hit the Telegram API directly
+    try:
+        chat = await context.bot.get_chat(username_str)
+        return chat.id, chat.first_name or username_str
+    except Exception as e:
+        logger.warning(
+            f"Failed to resolve username {username_str} via Telegram API: {e}"
+        )
+        return None, None
+
+
 async def user_stats_cmd(update: Update, context: CallbackContext):
     """Handler for /level."""
     if not update.effective_user or getattr(update.effective_user, "is_bot", True):
@@ -424,63 +469,18 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
     target_id = update.effective_user.id
     target_name = update.effective_user.first_name
 
-    # Check for mention or text_mention
+    # Check for arguments targeting another user
     if context.args:
         # We are seeking a different user. Nullify the default target_id.
-        target_id = None
-        target_name = None
+        arg_str = context.args[0]
+        resolved_id, resolved_name = await resolve_username(arg_str, update, context)
 
-        # First check text_mentions
-        entities = update.message.parse_entities(None)
-
-        for ent, text in entities.items():
-            if ent.type == "text_mention" and ent.user:
-                target_id = ent.user.id
-                target_name = ent.user.first_name
-                break
-            elif ent.type == "mention":
-                # Regular @username mentions
-                # Try live API resolution first
-                try:
-                    chat = await context.bot.get_chat(text)
-                    target_id = chat.id
-                    target_name = chat.first_name or text
-                    break
-                except Exception:
-                    # Fallback to DB
-                    user_row = await db.get_user_by_username(text)
-                    if user_row:
-                        target_id = user_row.get("user_id")
-                        target_name = text
-                        break
-                    else:
-                        await update.message.reply_text(
-                            "Could not resolve that @username via Telegram. Please ensure it is correct."
-                        )
-                        return
-
-        # Fallback if no entities were resolved to a different user, but an arg was provided
-        if target_id is None:
-            arg = context.args[0]
-            if arg.startswith("@"):
-                try:
-                    chat = await context.bot.get_chat(arg)
-                    target_id = chat.id
-                    target_name = chat.first_name or arg
-                except Exception:
-                    user_row = await db.get_user_by_username(arg)
-                    if user_row:
-                        target_id = user_row.get("user_id")
-                        target_name = arg
-                    else:
-                        await update.message.reply_text(
-                            "Could not resolve that @username via Telegram. Please ensure it is correct."
-                        )
-                        return
-
-        if target_id is None:
+        if resolved_id:
+            target_id = resolved_id
+            target_name = resolved_name
+        else:
             await update.message.reply_text(
-                "Could not resolve a target user from the arguments provided."
+                "Could not resolve a target user from the arguments provided via Telegram. Please ensure the @username is correct."
             )
             return
 
@@ -597,6 +597,32 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+async def get_id_cmd(update: Update, context: CallbackContext):
+    """Test command to explicitly check API username resolution."""
+    if (
+        not update.effective_user
+        or getattr(update.effective_user, "is_bot", True)
+        or not update.message
+    ):
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text("Please provide a @username.")
+        return
+
+    arg_str = args[0]
+    resolved_id, resolved_name = await resolve_username(arg_str, update, context)
+
+    if resolved_id:
+        await update.message.reply_text(
+            f"API Resolution Success!\nName: {resolved_name}\nID: `{resolved_id}`",
+            parse_mode="Markdown",
+        )
+    else:
+        await update.message.reply_text("Telegram API failed to resolve that handle.")
+
+
 async def give_cxp_cmd(update: Update, context: CallbackContext):
     """Admin only: /give <val> [@username/reply]. Grant or remove CXP."""
     if (
@@ -650,54 +676,29 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
 
     # Parse args if reply didn't resolve everything
     if delta_cxp is None or target_id is None:
+        # Isolate the delta_cxp integer
         for arg in args:
             try:
                 delta_cxp = int(arg)
             except ValueError:
                 pass
 
-        # Parse target from entities (handles @mentions properly when text_mention is available)
-        entities = update.message.parse_entities(None)
-
-        # In telegram-python-bot, parse_entities returns Dict[MessageEntity, str]
-        for ent, text in entities.items():
-            if ent.type == "text_mention" and ent.user:
-                target_id = ent.user.id
-                target_name = ent.user.first_name
+        # Try to resolve the user from remaining text/entities
+        arg_str = None
+        for arg in args:
+            if arg.startswith("@"):
+                arg_str = arg
                 break
-            elif ent.type == "mention":
-                # Regular @username mentions
-                # Try live API resolution first
-                try:
-                    chat = await context.bot.get_chat(text)
-                    target_id = chat.id
-                    target_name = chat.first_name or text
-                    break
-                except Exception:
-                    user_row = await db.get_user_by_username(text)
-                    if user_row:
-                        target_id = user_row.get("user_id")
-                        target_name = text
-                        break
-        # Fallback manual arg parsing if entity didn't match
-        if target_id is None:
-            for arg in args:
-                if arg.startswith("@"):
-                    # Try live API resolution first
-                    try:
-                        chat = await context.bot.get_chat(arg)
-                        target_id = chat.id
-                        target_name = chat.first_name or arg
-                    except Exception:
-                        user_row = await db.get_user_by_username(arg)
-                        if user_row:
-                            target_id = user_row.get("user_id")
-                            target_name = arg
-                        break
+
+        # If no explicit @ string was found in args, still pass it through in case it's a text_mention
+        resolved_id, resolved_name = await resolve_username(arg_str, update, context)
+        if resolved_id:
+            target_id = resolved_id
+            target_name = resolved_name
 
     if target_id is None:
         await update.message.reply_text(
-            "Could not resolve the target user. Please ensure the @username is correct or reply to their message."
+            "Could not resolve the target user via Telegram. Please ensure the @username is correct or reply to their message."
         )
         return
 
