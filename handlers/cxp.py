@@ -689,33 +689,24 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     ):
         target_id = update.message.reply_to_message.from_user.id
         target_name = update.message.reply_to_message.from_user.first_name
-        if args:
-            try:
-                delta_cxp = int(args[0])
-            except ValueError:
-                pass
 
-    # Parse args if reply didn't resolve everything
-    if delta_cxp is None or target_id is None:
-        # Isolate the delta_cxp integer
-        for arg in args:
-            try:
-                delta_cxp = int(arg)
-            except ValueError:
-                pass
+    # Parse args to support varying formats: `/give 1000 @usr`, `/give @usr 1000`
+    arg_str = None
+    for arg in args:
+        try:
+            delta_cxp = int(arg)
+        except ValueError:
+            pass
 
-        # Try to resolve the user from remaining text/entities
-        arg_str = None
-        for arg in args:
-            if arg.startswith("@"):
-                arg_str = arg
-                break
+        if arg.startswith("@") and arg_str is None:
+            arg_str = arg
 
-        # If no explicit @ string was found in args, still pass it through in case it's a text_mention
-        resolved_id, resolved_name = await resolve_username(arg_str, update, context)
-        if resolved_id:
-            target_id = resolved_id
-            target_name = resolved_name
+    # Attempt resolution to allow explicit usernames to override a reply target
+    # If no explicit @ string was found, still pass it through for text_mentions
+    resolved_id, resolved_name = await resolve_username(arg_str, update, context)
+    if resolved_id:
+        target_id = resolved_id
+        target_name = resolved_name
 
     if target_id is None:
         await update.message.reply_text(
