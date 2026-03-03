@@ -173,15 +173,54 @@ def main() -> None:
         else os.environ.get("PUBLIC_DOMAIN")
     )
 
-    # Check and manage existing webhook
+    # We need a FastAPI application to serve the bot webhooks and our Mini App API
+    from fastapi import FastAPI, Request, Response
+    from fastapi.middleware.cors import CORSMiddleware
     import urllib.request
     import json
+    import uvicorn
+    from telegram.ext import ExtBot
 
+    fastapi_app = FastAPI()
+
+    # Enable CORS so the React app can call this API
+    fastapi_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # TODO: restrict this to the frontend domain in production
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # ---------------------------------------------------------
+    # API endpoints for the React Mini App
+    # ---------------------------------------------------------
+    @fastapi_app.get("/api/health")
+    async def health_check():
+        return {"status": "ok"}
+
+    @fastapi_app.get("/api/user/{user_id}")
+    async def get_user_stats(user_id: int):
+        user_data = await db.get_user(user_id)
+        if user_data:
+            return {
+                "user_id": user_data["user_id"],
+                "level": user_data.get("level", 0),
+                "cxp": user_data.get("cxp", 0),
+            }
+        return {"error": "User not found"}
+
+    # ---------------------------------------------------------
+    # Webhook Management
+    # ---------------------------------------------------------
     webhook_info_url = (
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getWebhookInfo"
     )
-    expected_webhook_url = f"https://{PUBLIC_DOMAIN}" if PUBLIC_DOMAIN else None
+    expected_webhook_url = (
+        f"https://{PUBLIC_DOMAIN}/telegram" if PUBLIC_DOMAIN else None
+    )
 
+    # Check and manage existing webhook
     try:
         with urllib.request.urlopen(webhook_info_url) as response:
             data = json.loads(response.read().decode())
@@ -208,17 +247,50 @@ def main() -> None:
         logger.warning(f"Error checking/deleting webhook: {e}")
 
     if PUBLIC_DOMAIN:
-        logger.info(f"Starting webhook on port {PORT} for domain {PUBLIC_DOMAIN}")
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            webhook_url=expected_webhook_url,
-            allowed_updates=Update.ALL_TYPES,
+        logger.info(
+            f"Starting webhook via FastAPI on port {PORT} for domain {PUBLIC_DOMAIN}"
         )
+
+        # Define the webhook endpoint on the FastAPI app
+        @fastapi_app.post("/telegram")
+        async def telegram_webhook(request: Request):
+            await application.update_queue.put(
+                Update.de_json(data=await request.json(), bot=application.bot)
+            )
+            return Response()
+
+        async def run_fastapi():
+            # Initialise telegram-related dependencies
+            await application.initialize()
+            await application.start()
+            # Set the webhook explicitly
+            await application.bot.set_webhook(
+                url=expected_webhook_url, allowed_updates=Update.ALL_TYPES
+            )
+
+            # Run the server
+            config = uvicorn.Config(
+                app=fastapi_app, host="0.0.0.0", port=PORT, log_level="info"
+            )
+            server = uvicorn.Server(config)
+            await server.serve()
+
+            # Shutdown
+            await application.stop()
+            await application.shutdown()
+
+        import asyncio
+
+        asyncio.run(run_fastapi())
+
     else:
         logger.info(
             "No public domain provided. Proceeding with long polling (getUpdates)."
         )
+        # We can still run the FastAPI app concurrently with polling if we want,
+        # but for local dev with polling, we usually just run the bot polling directly.
+        # To run both locally without a webhook, we need `asyncio.gather`.
+        # For simplicity when PUBLIC_DOMAIN is not set, we'll just run polling like before.
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

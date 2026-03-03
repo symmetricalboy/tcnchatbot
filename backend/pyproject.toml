@@ -10,6 +10,8 @@ python = "^3.14"
 python-telegram-bot = {version = "^22.6", extras = ["webhooks", "job-queue"]}
 python-dotenv = "^1.0.1"
 asyncpg = "^0.31.0"
+fastapi = "^0.135.1"
+uvicorn = {extras = ["standard"], version = "^0.41.0"}
 
 [build-system]
 requires = ["poetry-core"]
