@@ -51,6 +51,12 @@ async def _resolve_chat_id(input_str: str, context: CallbackContext) -> int | No
     if not input_str:
         return None
 
+    # Strip URLs to allow users to paste t.me/ links
+    input_str = (
+        input_str.replace("https://", "").replace("http://", "").replace("t.me/", "")
+    )
+    input_str = input_str.rstrip("/").strip()
+
     # Check if the user tried to input a numeric ID
     try:
         int(input_str)
