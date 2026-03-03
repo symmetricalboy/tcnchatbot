@@ -12,15 +12,11 @@ class Database:
     async def connect(self):
         database_url = os.getenv("DATABASE_URL")
         if not database_url:
-            logger.error("DATABASE_URL is not set in the environment.")
-            return
+            raise ValueError("DATABASE_URL is not set in the environment.")
 
-        try:
-            self.pool = await asyncpg.create_pool(database_url)
-            await self.init_db()
-            logger.info("Connected to the database successfully.")
-        except Exception as e:
-            logger.error(f"Failed to connect to the database: {e}")
+        self.pool = await asyncpg.create_pool(database_url)
+        await self.init_db()
+        logger.info("Connected to the database successfully.")
 
     async def disconnect(self):
         if self.pool:
@@ -97,7 +93,9 @@ class Database:
         query = f"UPDATE bot_config SET {set_clause} WHERE id = 1"
 
         async with self.pool.acquire() as conn:
-            await conn.execute(query, *values)
+            result = await conn.execute(query, *values)
+            if result == "UPDATE 0":
+                raise Exception("Database configuration row id=1 is missing.")
             return True
 
     async def get_user(self, user_id):

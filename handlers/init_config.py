@@ -24,24 +24,25 @@ MAIN_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL, CXP_TOPIC = range(4)
 # Additional states for individual edits
 EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME, EDIT_CXP = range(4, 9)
 
+
 async def _extract_topic_id(message) -> int | None:
     """Extract topic ID from a forwarded message or topic link."""
-    if getattr(message, 'message_thread_id', None):
+    if getattr(message, "message_thread_id", None):
         return message.message_thread_id
-        
+
     text = message.text.strip() if message.text else ""
     try:
         return int(text)
     except ValueError:
         pass
-        
-    match = re.search(r't\.me/(?:c/\d+/|[\w_]+/)?(\d+)', text)
+
+    match = re.search(r"t\.me/(?:c/\d+/|[\w_]+/)?(\d+)", text)
     if match:
         try:
             return int(match.group(1))
         except ValueError:
             pass
-            
+
     return None
 
 
@@ -235,6 +236,7 @@ async def get_admin_channel(update: Update, context: CallbackContext) -> int:
     )
     return CXP_TOPIC
 
+
 async def get_cxp_topic(update: Update, context: CallbackContext) -> int:
     """Handle CXP topic input, save config to database, and finish."""
     topic_id = await _extract_topic_id(update.message)
@@ -251,12 +253,14 @@ async def get_cxp_topic(update: Update, context: CallbackContext) -> int:
     admin_group_id = context.user_data.get("admin_channel")
 
     try:
-        await db.update_config(
+        success = await db.update_config(
             main_group_id=main_group_id,
             channel_id=channel_id,
             admin_group_id=admin_group_id,
             cxp_topic_id=topic_id,
         )
+        if not success:
+            raise Exception("Database returned False, pooling might be uninitialized.")
 
         await update.message.reply_text(
             "Configuration Complete!\n\n"
@@ -306,7 +310,9 @@ async def save_edit_main(update: Update, context: CallbackContext) -> int:
         return EDIT_MAIN
 
     try:
-        await db.update_config(main_group_id=group_id)
+        success = await db.update_config(main_group_id=group_id)
+        if not success:
+            raise Exception("Database returned False, pooling might be uninitialized.")
         await update.message.reply_text(
             f"✅ Main Group updated successfully (ID: `{group_id}`).",
             parse_mode="Markdown",
@@ -345,7 +351,9 @@ async def save_edit_channel(update: Update, context: CallbackContext) -> int:
         return EDIT_CHANNEL
 
     try:
-        await db.update_config(channel_id=channel_id)
+        success = await db.update_config(channel_id=channel_id)
+        if not success:
+            raise Exception("Database returned False, pooling might be uninitialized.")
         await update.message.reply_text(
             f"✅ Channel updated successfully (ID: `{channel_id}`).",
             parse_mode="Markdown",
@@ -384,7 +392,9 @@ async def save_edit_admin(update: Update, context: CallbackContext) -> int:
         return EDIT_ADMIN
 
     try:
-        await db.update_config(admin_group_id=admin_id)
+        success = await db.update_config(admin_group_id=admin_id)
+        if not success:
+            raise Exception("Database returned False, pooling might be uninitialized.")
         await update.message.reply_text(
             f"✅ Admin Group updated successfully (ID: `{admin_id}`).",
             parse_mode="Markdown",
@@ -525,7 +535,7 @@ async def prompt_edit_welcome(update: Update, context: CallbackContext) -> int:
         f"to mention the user.\n\n"
         f"*(Type /restart to cancel this edit and return to the main menu)*",
         parse_mode="Markdown",
-        disable_web_page_preview=True
+        disable_web_page_preview=True,
     )
     return EDIT_WELCOME
 
@@ -535,7 +545,9 @@ async def save_edit_welcome(update: Update, context: CallbackContext) -> int:
     welcome_input = update.message.text.strip()
 
     try:
-        await db.update_config(welcome_message=welcome_input)
+        success = await db.update_config(welcome_message=welcome_input)
+        if not success:
+            raise Exception("Database returned False, pooling might be uninitialized.")
         await update.message.reply_text(
             f"✅ Welcome message updated successfully.",
             parse_mode="Markdown",
@@ -572,7 +584,9 @@ async def save_edit_cxp(update: Update, context: CallbackContext) -> int:
         return EDIT_CXP
 
     try:
-        await db.update_config(cxp_topic_id=topic_id)
+        success = await db.update_config(cxp_topic_id=topic_id)
+        if not success:
+            raise Exception("Database returned False, pooling might be uninitialized.")
         await update.message.reply_text(
             f"✅ CXP Topic updated successfully (ID: `{topic_id}`).",
             parse_mode="Markdown",
@@ -582,6 +596,7 @@ async def save_edit_cxp(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text("Database update failed.")
 
     return await start(update, context)
+
 
 # Note: Additional edit states and check_perms will be implemented in subsequent functions.
 
@@ -610,9 +625,7 @@ def get_config_conversation_handler() -> ConversationHandler:
             ADMIN_CHANNEL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_admin_channel)
             ],
-            CXP_TOPIC: [
-                MessageHandler(filters.ALL & ~filters.COMMAND, get_cxp_topic)
-            ],
+            CXP_TOPIC: [MessageHandler(filters.ALL & ~filters.COMMAND, get_cxp_topic)],
             EDIT_MAIN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_main)
             ],
@@ -625,9 +638,7 @@ def get_config_conversation_handler() -> ConversationHandler:
             EDIT_WELCOME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_welcome)
             ],
-            EDIT_CXP: [
-                MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_cxp)
-            ],
+            EDIT_CXP: [MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_cxp)],
         },
         fallbacks=[CommandHandler("restart", restart)],
         per_message=False,
