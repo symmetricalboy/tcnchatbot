@@ -217,7 +217,7 @@ async def _announce_level_up(context: CallbackContext, user, new_level: int):
     if cxp_topic_id and main_group_id:
         try:
             mention = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
-            msg = f"🎉 Congratulations {mention}, you've leveled up to <b>Level {new_level}</b>! Keep it up!"
+            msg = f"🎉 {mention} has reached <b>Level {new_level}</b>!"
             await context.bot.send_message(
                 chat_id=main_group_id,
                 message_thread_id=cxp_topic_id,
