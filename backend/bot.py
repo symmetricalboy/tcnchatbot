@@ -43,6 +43,8 @@ from handlers.translation import (
     translate_es_cmd,
     translate_fa_cmd,
     translate_tr_cmd,
+    translate_interactive_cmd,
+    translate_callback,
 )
 from handlers.moderation import mute_cmd, unmute_cmd, kick_cmd, ban_cmd
 
@@ -165,6 +167,7 @@ def main() -> None:
         MessageHandler(filters.StatusUpdate.ALL, clean_service_messages)
     )
     application.add_handler(CallbackQueryHandler(verify_user, pattern=r"^verify_"))
+    application.add_handler(CallbackQueryHandler(translate_callback, pattern=r"^tr_"))
 
     # CXP Handlers
     application.add_handler(
@@ -191,6 +194,7 @@ def main() -> None:
     application.add_handler(CommandHandler("es", translate_es_cmd))
     application.add_handler(CommandHandler("fa", translate_fa_cmd))
     application.add_handler(CommandHandler("tr", translate_tr_cmd))
+    application.add_handler(CommandHandler("translate", translate_interactive_cmd))
 
     # Moderation Handlers
     application.add_handler(CommandHandler("mute", mute_cmd))

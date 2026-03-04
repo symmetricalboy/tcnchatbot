@@ -59,6 +59,22 @@ class Database:
                     PRIMARY KEY (chat_id, message_id)
                 );
                 
+                CREATE TABLE IF NOT EXISTS translations (
+                    chat_id BIGINT,
+                    message_id BIGINT,
+                    original_text TEXT,
+                    lang_en TEXT,
+                    lang_es TEXT,
+                    lang_fr TEXT,
+                    lang_pt TEXT,
+                    lang_id TEXT,
+                    lang_fa TEXT,
+                    lang_ru TEXT,
+                    lang_uk TEXT,
+                    lang_tr TEXT,
+                    PRIMARY KEY (chat_id, message_id)
+                );
+                
                 INSERT INTO bot_config (id, welcome_message) 
                 VALUES (1, 'Welcome {mention}!\n\n📜 Community Rules:\n- Be polite and respectful\n- No spam or unwanted advertising\n- Follow moderator instructions\n- Please use the appropriate topics for your discussions\n\n🎮 Enjoy your time in The Clean Network Community!') 
                 ON CONFLICT (id) DO NOTHING;
@@ -247,6 +263,72 @@ class Database:
                 "SELECT user_id FROM messages WHERE chat_id = $1 AND message_id = $2",
                 chat_id,
                 message_id,
+            )
+
+    async def save_original_translation_text(
+        self, chat_id: int, message_id: int, text: str
+    ):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO translations (chat_id, message_id, original_text) 
+                VALUES ($1, $2, $3) 
+                ON CONFLICT (chat_id, message_id) DO UPDATE SET original_text = EXCLUDED.original_text
+                """,
+                chat_id,
+                message_id,
+                text,
+            )
+
+    async def get_translation(self, chat_id: int, message_id: int, lang_code: str):
+        """Fetch the specific cached language text if it exists."""
+        if not self.pool:
+            return None
+
+        # Valid language codes matching our strict columns
+        valid_langs = {"en", "es", "fr", "pt", "id", "fa", "ru", "uk", "tr"}
+        if lang_code not in valid_langs:
+            return None
+
+        # Dynamically build the column name (safe because it's strictly validated above)
+        column_name = f"lang_{lang_code}"
+
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                f"SELECT {column_name} FROM translations WHERE chat_id = $1 AND message_id = $2",
+                chat_id,
+                message_id,
+            )
+
+    async def get_translation_original_text(self, chat_id: int, message_id: int):
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT original_text FROM translations WHERE chat_id = $1 AND message_id = $2",
+                chat_id,
+                message_id,
+            )
+
+    async def save_translation(
+        self, chat_id: int, message_id: int, lang_code: str, translated_text: str
+    ):
+        if not self.pool:
+            return
+
+        valid_langs = {"en", "es", "fr", "pt", "id", "fa", "ru", "uk", "tr"}
+        if lang_code not in valid_langs:
+            return
+
+        column_name = f"lang_{lang_code}"
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                f"UPDATE translations SET {column_name} = $3 WHERE chat_id = $1 AND message_id = $2",
+                chat_id,
+                message_id,
+                translated_text,
             )
 
 
