@@ -163,12 +163,20 @@ async def translate_es_cmd(update: Update, context: CallbackContext):
     await _translate_message(update, context, "Spanish", "es")
 
 
+async def translate_fr_cmd(update: Update, context: CallbackContext):
+    await _translate_message(update, context, "French", "fr")
+
+
 async def translate_fa_cmd(update: Update, context: CallbackContext):
     await _translate_message(update, context, "Persian", "fa")
 
 
 async def translate_tr_cmd(update: Update, context: CallbackContext):
     await _translate_message(update, context, "Turkish", "tr")
+
+
+async def translate_uk_cmd(update: Update, context: CallbackContext):
+    await _translate_message(update, context, "Ukrainian", "uk")
 
 
 async def translate_interactive_cmd(update: Update, context: CallbackContext):

@@ -1,5 +1,6 @@
 import logging
 import math
+import random
 from datetime import datetime
 from telegram import Update
 from telegram.ext import CallbackContext
@@ -645,29 +646,37 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
 
 
 async def cxp_help_cmd(update: Update, context: CallbackContext):
-    """Handler for /help to show CXP info."""
-    config = await db.get_config()
-    cxp_topic_id = config.get("cxp_topic_id") if config else None
-
-    if (
-        not update.message
-        or not update.message.message_thread_id
-        or update.message.message_thread_id != cxp_topic_id
-    ):
-        return
-
+    """Handler for /help to show general bot info."""
     msg = (
-        "🌟 **CXP & Leveling System Help** 🌟\n\n"
+        "🤖 **Welcome to TCN's Chatbot** 🤖\n\n"
+        "I am here to manage the community, handle translation, and track community engagement.\n\n"
+        "**Core Features:**\n"
+        "• **CXP System**: Earn Community Experience Points (CXP) by chatting and reacting to messages. As you level up, your reactions carry more weight!\n"
+        "• **Leaderboards**: Compete with others and view the most active community members.\n"
+        "• **Translations**: I can automatically translate messages between different languages so everyone can understand each other.\n\n"
+        "To view the specific commands and how to use them, type `/commands`."
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def commands_cmd(update: Update, context: CallbackContext):
+    """Handler for /commands to show CXP info."""
+    msg = (
+        "🌟 **CXP & Leveling System Commands** 🌟\n\n"
         "**Earning CXP:**\n"
         "• **Messages**: Earn `50 CXP` for chatting (limit 1 per minute).\n"
         "• **Reactions**: Earn or lose CXP when others react to your messages.\n"
-        "  Positive emojis (thumbs up, hearts, fire, etc.) give `+50 CXP`.\n"
-        "  Negative emojis (thumbs down, anger, stop, etc.) give `-50 CXP`.\n"
+        "  Positive emojis give `+50 CXP`, negative emojis give `-50 CXP`.\n"
         "• **Influence**: Higher level users multiply the CXP of their reactions! Your vote carries more weight as you rank up.\n\n"
-        "**Commands:**\n"
+        "**User Commands:**\n"
         "• `/level` — View your own stats and rank. Use `/level @username` to check someone else.\n"
         "• `/leaderboard` — View the top 10 CXP leaders (Admins excluded).\n"
-        "• `/help` — View this message."
+        "• `/steal` — Steal 1-100 CXP from a random user! 1-hour cooldown.\n\n"
+        "**Translation Commands:**\n"
+        "Reply to a message with one of the following commands to translate it:\n"
+        "`/en` (English), `/pt` (Portuguese), `/es` (Spanish), `/id` (Indonesian), "
+        "`/ru` (Russian), `/fa` (Persian), `/tr` (Turkish), `/fr` (French), `/uk` (Ukrainian).\n"
+        "You can also use `/translate <language>` for interactive translation."
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -681,6 +690,17 @@ async def get_id_cmd(update: Update, context: CallbackContext):
         getattr(update.effective_user, "is_bot", True)
         and not update.message.sender_chat
     ):
+        return
+
+    config = await db.get_config()
+    main_group_id = config.get("main_group_id") if config else None
+
+    # Determine actor identity
+    actor_id = update.effective_user.id
+    if getattr(update.effective_user, "is_bot", True) and update.message.sender_chat:
+        actor_id = update.message.sender_chat.id
+
+    if not await is_user_admin(actor_id, main_group_id, context):
         return
 
     # 1. Check for replied-to message
@@ -931,64 +951,28 @@ async def set_admin_cmd(update: Update, context: CallbackContext):
 
 
 async def steal_cxp_cmd(update: Update, context: CallbackContext):
-    """Member command: /steal [@username/reply]. Steal 100 CXP with 1-hour cooldown."""
+    """Member command: /steal. Steal 1-100 CXP from a random user with 1-hour cooldown."""
     if not update.effective_user or not update.message:
         return
 
-    # Check if we are in the main group
+    # Check if we are in the main group and cxp topic
     config = await db.get_config()
     main_group_id = config.get("main_group_id") if config else None
+    cxp_topic_id = config.get("cxp_topic_id") if config else None
+
     if not main_group_id or update.effective_chat.id != main_group_id:
         return
 
-    user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
-
-    # 1. Resolve target
-    target_id = None
-    target_name = None
-
-    # Try reply target
-    if update.message.reply_to_message and not getattr(
-        update.message, "is_automatic_forward", False
+    if (
+        not update.message
+        or not update.message.message_thread_id
+        or update.message.message_thread_id != cxp_topic_id
     ):
-        if not (
-            update.message.is_topic_message
-            and update.message.reply_to_message.message_id
-            == update.message.message_thread_id
-        ):
-            if update.message.reply_to_message.sender_chat:
-                target_id = update.message.reply_to_message.sender_chat.id
-                target_name = (
-                    update.message.reply_to_message.sender_chat.title
-                    or update.message.reply_to_message.sender_chat.username
-                )
-            elif (
-                update.message.reply_to_message.from_user
-                and not update.message.reply_to_message.from_user.is_bot
-            ):
-                target_id = update.message.reply_to_message.from_user.id
-                target_name = update.message.reply_to_message.from_user.first_name
-
-    # Try @username argument
-    if context.args:
-        arg_str = context.args[0]
-        resolved_id, resolved_name = await resolve_username(arg_str, update, context)
-        if resolved_id:
-            target_id = resolved_id
-            target_name = resolved_name
-
-    if not target_id:
-        await update.message.reply_text(
-            "Please provide a @username or reply to their message to steal CXP."
-        )
         return
 
-    if target_id == user_id:
-        await update.message.reply_text("You cannot steal from yourself!")
-        return
+    user_id = update.effective_user.id
 
-    # 2. Check Cooldown
+    # 1. Check Cooldown
     user_data = await db.get_user(user_id)
     last_steal = user_data.get("last_steal_time")
     if last_steal:
@@ -1005,13 +989,28 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
             )
             return
 
-    # 3. Perform Steal
-    target_data = await db.get_user(target_id)
+    # 2. Resolve random target
+    target_data = await db.get_random_user(user_id)
     if not target_data:
-        await update.message.reply_text("Target user not found in the system.")
+        await update.message.reply_text("There is no one available to steal from!")
         return
 
-    STEAL_AMOUNT = 100
+    target_id = target_data.get("user_id")
+    target_name = target_data.get("display_name")
+
+    if not target_name:
+        username = target_data.get("username")
+        if username:
+            target_name = f"@{username}"
+        else:
+            try:
+                chat = await context.bot.get_chat(target_id)
+                target_name = chat.title or chat.first_name or f"User {target_id}"
+            except Exception:
+                target_name = f"User {target_id}"
+
+    # 3. Perform Steal
+    STEAL_AMOUNT = random.randint(1, 100)
 
     # Deduct from target
     await db.update_user_cxp(target_id, -STEAL_AMOUNT)

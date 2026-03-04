@@ -30,6 +30,7 @@ from handlers.cxp import (
     user_stats_cmd,
     leaderboard_cmd,
     cxp_help_cmd,
+    commands_cmd,
     give_cxp_cmd,
     get_id_cmd,
     set_admin_cmd,
@@ -43,6 +44,8 @@ from handlers.translation import (
     translate_es_cmd,
     translate_fa_cmd,
     translate_tr_cmd,
+    translate_fr_cmd,
+    translate_uk_cmd,
     translate_interactive_cmd,
     translate_callback,
 )
@@ -181,6 +184,7 @@ def main() -> None:
     application.add_handler(CommandHandler("level", user_stats_cmd))
     application.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
     application.add_handler(CommandHandler("help", cxp_help_cmd))
+    application.add_handler(CommandHandler("commands", commands_cmd))
     application.add_handler(CommandHandler("give", give_cxp_cmd))
     application.add_handler(CommandHandler("checkid", get_id_cmd))
     application.add_handler(CommandHandler("setadmin", set_admin_cmd))
@@ -194,6 +198,8 @@ def main() -> None:
     application.add_handler(CommandHandler("es", translate_es_cmd))
     application.add_handler(CommandHandler("fa", translate_fa_cmd))
     application.add_handler(CommandHandler("tr", translate_tr_cmd))
+    application.add_handler(CommandHandler("fr", translate_fr_cmd))
+    application.add_handler(CommandHandler("uk", translate_uk_cmd))
     application.add_handler(CommandHandler("translate", translate_interactive_cmd))
 
     # Moderation Handlers

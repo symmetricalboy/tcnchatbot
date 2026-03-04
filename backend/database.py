@@ -166,6 +166,15 @@ class Database:
                 "SELECT * FROM users WHERE username ILIKE $1", username
             )
 
+    async def get_random_user(self, exclude_user_id: int):
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                "SELECT * FROM users WHERE user_id != $1 ORDER BY RANDOM() LIMIT 1",
+                exclude_user_id,
+            )
+
     async def update_user_username(self, user_id: int, username: str):
         if not self.pool or not username:
             return
