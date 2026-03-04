@@ -91,7 +91,7 @@ async def _translate_message(
         prompt = f"Translate this message into {target_language}. Respond ONLY with the translated text, no additional commentary:\n\n{text_to_translate}"
 
         response = gemini_client.models.generate_content(
-            model="gemini-3.1-pro-preview",
+            model="gemini-3.1-flash-lite-preview",
             contents=prompt,
         )
 
