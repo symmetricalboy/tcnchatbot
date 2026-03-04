@@ -52,14 +52,25 @@ async def _translate_message(
 
     if context.args:
         text_to_translate = " ".join(context.args)
-    if update.message.reply_to_message and update.message.reply_to_message.text:
-        # Ignore implicit topic root replies
-        if not (
-            update.message.is_topic_message
-            and update.message.reply_to_message.message_id
-            == update.message.message_thread_id
+    elif update.message.reply_to_message:
+        reply = update.message.reply_to_message
+
+        # Determine if it's a topic root message
+        # In forum topics, the first message (root) is often treated as a reply target if no specific message is selected
+        is_topic_root = False
+        if update.effective_chat and update.effective_chat.is_forum:
+            # If thread_id is None, it's the General topic (root is usually msg id 1)
+            # If thread_id is set, it's a specific topic (root is the thread_id)
+            thread_id = update.message.message_thread_id
+            if (thread_id is None and reply.message_id == 1) or (
+                reply.message_id == thread_id
+            ):
+                is_topic_root = True
+
+        if not is_topic_root and not getattr(
+            update.message, "is_automatic_forward", False
         ):
-            text_to_translate = update.message.reply_to_message.text
+            text_to_translate = reply.text or reply.caption or ""
 
     if not text_to_translate:
         await update.message.reply_text(

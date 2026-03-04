@@ -19,9 +19,15 @@ async def mute_cmd(update: Update, context: CallbackContext):
 
     target_id, target_name = await get_target(update, context)
     if not target_id:
-        await update.message.reply_text(
-            "Please provide a @username or reply to a message to mute."
-        )
+        if context.args or (
+            update.message.reply_to_message
+            and not getattr(update.message, "is_automatic_forward", False)
+        ):
+            await update.message.reply_text("❌ Target not recognized.")
+        else:
+            await update.message.reply_text(
+                "Please provide a @username or reply to a message to mute."
+            )
         return
 
     # Parse optional timer
@@ -75,9 +81,15 @@ async def kick_cmd(update: Update, context: CallbackContext):
 
     target_id, target_name = await get_target(update, context)
     if not target_id:
-        await update.message.reply_text(
-            "Please provide a @username or reply to a message to kick."
-        )
+        if context.args or (
+            update.message.reply_to_message
+            and not getattr(update.message, "is_automatic_forward", False)
+        ):
+            await update.message.reply_text("❌ Target not recognized.")
+        else:
+            await update.message.reply_text(
+                "Please provide a @username or reply to a message to kick."
+            )
         return
 
     try:
@@ -106,9 +118,15 @@ async def ban_cmd(update: Update, context: CallbackContext):
 
     target_id, target_name = await get_target(update, context)
     if not target_id:
-        await update.message.reply_text(
-            "Please provide a @username or reply to a message to ban."
-        )
+        if context.args or (
+            update.message.reply_to_message
+            and not getattr(update.message, "is_automatic_forward", False)
+        ):
+            await update.message.reply_text("❌ Target not recognized.")
+        else:
+            await update.message.reply_text(
+                "Please provide a @username or reply to a message to ban."
+            )
         return
 
     try:
@@ -135,9 +153,15 @@ async def unmute_cmd(update: Update, context: CallbackContext):
 
     target_id, target_name = await get_target(update, context)
     if not target_id:
-        await update.message.reply_text(
-            "Please provide a @username or reply to a message to unmute."
-        )
+        if context.args or (
+            update.message.reply_to_message
+            and not getattr(update.message, "is_automatic_forward", False)
+        ):
+            await update.message.reply_text("❌ Target not recognized.")
+        else:
+            await update.message.reply_text(
+                "Please provide a @username or reply to a message to unmute."
+            )
         return
 
     try:
