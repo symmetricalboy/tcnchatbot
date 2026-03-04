@@ -1,6 +1,7 @@
+from datetime import datetime, timedelta
 from telegram import Update, ChatPermissions
 from telegram.ext import CallbackContext
-from handlers.common import resolve_username, is_user_admin, get_target
+from handlers.common import is_user_admin, get_target
 
 
 async def mute_cmd(update: Update, context: CallbackContext):
@@ -23,6 +24,19 @@ async def mute_cmd(update: Update, context: CallbackContext):
         )
         return
 
+    # Parse optional timer
+    until_date = None
+    mute_duration_str = "permanently"
+    if context.args:
+        for arg in context.args:
+            try:
+                minutes = int(arg)
+                until_date = datetime.now() + timedelta(minutes=minutes)
+                mute_duration_str = f"for {minutes} minutes"
+                break
+            except ValueError:
+                continue
+
     try:
         await context.bot.restrict_chat_member(
             chat_id=chat_id,
@@ -36,9 +50,11 @@ async def mute_cmd(update: Update, context: CallbackContext):
                 can_invite_users=False,
                 can_pin_messages=False,
             ),
+            until_date=until_date,
         )
         await update.message.reply_text(
-            f"🔇 **{target_name}** has been muted.", parse_mode="Markdown"
+            f"🔇 **{target_name}** has been muted {mute_duration_str}.",
+            parse_mode="Markdown",
         )
     except Exception as e:
         await update.message.reply_text(f"❌ Failed to mute: {e}")
@@ -102,3 +118,44 @@ async def ban_cmd(update: Update, context: CallbackContext):
         )
     except Exception as e:
         await update.message.reply_text(f"❌ Failed to ban: {e}")
+
+
+async def unmute_cmd(update: Update, context: CallbackContext):
+    """Admin only: /unmute [@username/reply]. Unmutes the user."""
+    if not update.effective_user or not update.message:
+        return
+
+    chat_id = update.effective_chat.id
+    actor_id = update.effective_user.id
+    if update.message.sender_chat:
+        actor_id = update.message.sender_chat.id
+
+    if not await is_user_admin(actor_id, chat_id, context):
+        return
+
+    target_id, target_name = await get_target(update, context)
+    if not target_id:
+        await update.message.reply_text(
+            "Please provide a @username or reply to a message to unmute."
+        )
+        return
+
+    try:
+        await context.bot.restrict_chat_member(
+            chat_id=chat_id,
+            user_id=target_id,
+            permissions=ChatPermissions(
+                can_send_messages=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+                can_change_info=True,
+                can_invite_users=True,
+                can_pin_messages=True,
+            ),
+        )
+        await update.message.reply_text(
+            f"🔊 **{target_name}** has been unmuted.", parse_mode="Markdown"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to unmute: {e}")

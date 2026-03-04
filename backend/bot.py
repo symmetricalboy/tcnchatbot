@@ -44,7 +44,7 @@ from handlers.translation import (
     translate_fa_cmd,
     translate_tr_cmd,
 )
-from handlers.moderation import mute_cmd, kick_cmd, ban_cmd
+from handlers.moderation import mute_cmd, unmute_cmd, kick_cmd, ban_cmd
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
 warnings.filterwarnings(
@@ -194,6 +194,7 @@ def main() -> None:
 
     # Moderation Handlers
     application.add_handler(CommandHandler("mute", mute_cmd))
+    application.add_handler(CommandHandler("unmute", unmute_cmd))
     application.add_handler(CommandHandler("kick", kick_cmd))
     application.add_handler(CommandHandler("ban", ban_cmd))
 
