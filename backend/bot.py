@@ -229,7 +229,7 @@ def main() -> None:
         return {"error": "User not found"}
 
     # ---------------------------------------------------------
-    # Webhook Management
+    # Webhook and FastAPI Startup
     # ---------------------------------------------------------
     webhook_info_url = (
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getWebhookInfo"
@@ -238,78 +238,57 @@ def main() -> None:
         f"https://{PUBLIC_DOMAIN}/telegram" if PUBLIC_DOMAIN else None
     )
 
-    # Check and manage existing webhook
-    try:
-        with urllib.request.urlopen(webhook_info_url) as response:
-            data = json.loads(response.read().decode())
-            if data.get("ok") and data.get("result", {}).get("url"):
-                current_webhook_url = data["result"]["url"]
-
-                if expected_webhook_url and current_webhook_url == expected_webhook_url:
-                    logger.info(
-                        f"Existing webhook already matches expected domain: {expected_webhook_url}"
-                    )
-                else:
-                    logger.info(
-                        f"Existing webhook {current_webhook_url} does not match expected (or polling requested). Attempting to delete..."
-                    )
-
-                    delete_webhook_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook"
-                    with urllib.request.urlopen(delete_webhook_url) as del_response:
-                        del_data = json.loads(del_response.read().decode())
-                        if del_data.get("ok"):
-                            logger.info("Webhook deleted successfully.")
-                        else:
-                            logger.warning(f"Failed to delete webhook: {del_data}")
-    except Exception as e:
-        logger.warning(f"Error checking/deleting webhook: {e}")
-
+    # We only set up the webhook route if a public domain is configured
     if PUBLIC_DOMAIN:
-        logger.info(
-            f"Starting webhook via FastAPI on port {PORT} for domain {PUBLIC_DOMAIN}"
-        )
 
-        # Define the webhook endpoint on the FastAPI app
         @fastapi_app.post("/telegram")
         async def telegram_webhook(request: Request):
+            # Process the update synchronously in the background task using process_update
+            # or update_queue.put. We'll use update_queue.put as recommended.
             await application.update_queue.put(
                 Update.de_json(data=await request.json(), bot=application.bot)
             )
             return Response()
 
-        async def run_fastapi():
-            # Initialise telegram-related dependencies
-            await application.initialize()
-            await application.start()
-            # Set the webhook explicitly
+    async def run_fastapi_and_bot():
+        # Initialize telegram-related dependencies
+        await application.initialize()
+        await application.start()
+
+        if PUBLIC_DOMAIN:
+            logger.info(
+                f"Starting webhook via FastAPI on port {PORT} for domain {PUBLIC_DOMAIN}"
+            )
+            # Ensure any existing webhook is either correct or overridden
             await application.bot.set_webhook(
-                url=expected_webhook_url, allowed_updates=Update.ALL_TYPES
+                url=expected_webhook_url,
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True,
             )
-
-            # Run the server
-            config = uvicorn.Config(
-                app=fastapi_app, host="0.0.0.0", port=PORT, log_level="info"
+        else:
+            logger.info(
+                "No public domain provided. Starting FastAPI and proceeding with long polling (getUpdates)."
             )
-            server = uvicorn.Server(config)
-            await server.serve()
+            # Clear webhook to ensure polling works
+            await application.bot.delete_webhook(drop_pending_updates=True)
+            await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
 
-            # Shutdown
-            await application.stop()
-            await application.shutdown()
-
-        import asyncio
-
-        asyncio.run(run_fastapi())
-
-    else:
-        logger.info(
-            "No public domain provided. Proceeding with long polling (getUpdates)."
+        # Run the FastAPI server concurrently
+        config = uvicorn.Config(
+            app=fastapi_app, host="0.0.0.0", port=PORT, log_level="info"
         )
-        # We can still run the FastAPI app concurrently with polling if we want,
-        # but for local dev with polling, we usually just run the bot polling directly.
-        # To run both locally without a webhook, we need `asyncio.gather`.
-        # For simplicity when PUBLIC_DOMAIN is not set, we'll just run polling like before.
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        server = uvicorn.Server(config)
+        await server.serve()
+
+        # Shutdown
+        if not PUBLIC_DOMAIN:
+            await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
+
+    import asyncio
+
+    asyncio.run(run_fastapi_and_bot())
 
 
 if __name__ == "__main__":
