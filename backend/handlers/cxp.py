@@ -515,8 +515,12 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
         target_id = update.effective_user.id
         target_name = update.effective_user.first_name
 
-    # Check for reply targeting another user
-    if update.message.reply_to_message:
+    # Check for reply targeting another user.
+    # Channels automatically "reply" to the root channel post when posting in the discussion group.
+    # We must explicitly exclude `is_automatic_forward` logic from overriding the target!
+    if update.message.reply_to_message and not getattr(
+        update.message, "is_automatic_forward", False
+    ):
         target_chat = update.message.reply_to_message.sender_chat
         target_user = update.message.reply_to_message.from_user
 
@@ -677,8 +681,10 @@ async def get_id_cmd(update: Update, context: CallbackContext):
         return
 
     # 1. Check for replied-to message
-    if update.message.reply_to_message and getattr(
-        update.message.reply_to_message.from_user, "id", None
+    if (
+        update.message.reply_to_message
+        and not getattr(update.message, "is_automatic_forward", False)
+        and getattr(update.message.reply_to_message.from_user, "id", None)
     ):
         target_user = update.message.reply_to_message.from_user
         await update.message.reply_text(
@@ -751,7 +757,11 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     delta_cxp = None
 
     # Try reply target
-    if update.message.reply_to_message:
+    # Channels automatically "reply" to the root channel post when posting in the discussion group.
+    # We must explicitly exclude `is_automatic_forward` logic from overriding the target!
+    if update.message.reply_to_message and not getattr(
+        update.message, "is_automatic_forward", False
+    ):
         target_chat = update.message.reply_to_message.sender_chat
         target_user = update.message.reply_to_message.from_user
 
