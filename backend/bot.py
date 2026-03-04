@@ -32,6 +32,7 @@ from handlers.cxp import (
     cxp_help_cmd,
     give_cxp_cmd,
     get_id_cmd,
+    set_admin_cmd,
 )
 from handlers.translation import (
     translate_en_cmd,
@@ -110,11 +111,14 @@ async def admin_mention(update: Update, context) -> None:
             return
 
         admins = await chat.get_administrators()
-        admin_mentions = [
-            f'<a href="tg://user?id={admin.user.id}">&#8205;</a>'
-            for admin in admins
-            if not admin.user.is_bot
-        ]
+        admin_mentions = []
+        for admin in admins:
+            if not admin.user.is_bot:
+                admin_mentions.append(
+                    f'<a href="tg://user?id={admin.user.id}">&#8205;</a>'
+                )
+                # Pre-emptively register their admin status in the DB
+                await db.update_user_admin_status(admin.user.id, True)
 
         await update.message.reply_text(
             "<code>All group admins have been alerted!</code>\n"
@@ -174,6 +178,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", cxp_help_cmd))
     application.add_handler(CommandHandler("give", give_cxp_cmd))
     application.add_handler(CommandHandler("checkid", get_id_cmd))
+    application.add_handler(CommandHandler("set-admin", set_admin_cmd))
 
     # Translation Handlers
     application.add_handler(CommandHandler("en", translate_en_cmd))

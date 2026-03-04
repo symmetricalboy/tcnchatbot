@@ -616,8 +616,10 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
         u_id = row.get("user_id")
 
         # Check if admin
-        is_admin = False
-        if main_group_id:
+        is_admin = row.get("is_admin", False)
+
+        # If not manually set as admin in DB, fallback to Telegram Group check
+        if not is_admin and main_group_id:
             try:
                 member = await context.bot.get_chat_member(main_group_id, u_id)
                 if member.status in ("administrator", "creator"):
@@ -752,13 +754,22 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
         return
 
     # Check admin privileges
-    try:
-        member = await context.bot.get_chat_member(
-            main_group_id, update.effective_user.id
-        )
-        if member.status not in ("administrator", "creator"):
-            return
-    except Exception:
+    is_admin = False
+    actor_data = await db.get_user(update.effective_user.id)
+    if actor_data and actor_data.get("is_admin", False):
+        is_admin = True
+
+    if not is_admin:
+        try:
+            member = await context.bot.get_chat_member(
+                main_group_id, update.effective_user.id
+            )
+            if member.status in ("administrator", "creator"):
+                is_admin = True
+        except Exception:
+            pass
+
+    if not is_admin:
         return
 
     # Parse args (could be /give 100 @user or /give @user 100)
@@ -846,3 +857,93 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     action = "granted" if delta_cxp > 0 else "removed"
     msg = f"✅ Successfully {action} {abs(delta_cxp):,} CXP to {target_name}. Their new total is {new_cxp:,} CXP (Level {new_level})."
     await update.message.reply_text(msg)
+
+
+async def set_admin_cmd(update: Update, context: CallbackContext):
+    """Bot Owner only: /set-admin <true/false> [@username/reply]. Grant or remove DB admin status."""
+    from bot import BOT_OWNER_ID  # Ensure only the ultimate absolute owner can run this
+
+    if not BOT_OWNER_ID or update.effective_user.id != BOT_OWNER_ID:
+        return
+
+    if not update.effective_user or not update.message:
+        return
+
+    # Parse args (can be `/set-admin true @user` or `/set-admin @user true`)
+    args = context.args
+    if not args and not update.message.reply_to_message:
+        await update.message.reply_text(
+            "Usage: `/set-admin [true/false] [@username]` or reply to a message with `/set-admin [true/false]`",
+            parse_mode="Markdown",
+        )
+        return
+
+    target_id = None
+    target_name = None
+    target_chat = None
+    target_user = None
+    is_admin_flag = None
+
+    # Try reply target
+    if update.message.reply_to_message and not getattr(
+        update.message, "is_automatic_forward", False
+    ):
+        if (
+            update.message.is_topic_message
+            and update.message.reply_to_message.message_id
+            == update.message.message_thread_id
+        ):
+            pass
+        else:
+            target_chat = update.message.reply_to_message.sender_chat
+            target_user = update.message.reply_to_message.from_user
+
+    if target_chat:
+        target_id = target_chat.id
+        target_name = (
+            target_chat.title or target_chat.username or f"Channel {target_id}"
+        )
+    elif target_user and not getattr(target_user, "is_bot", False):
+        target_id = target_user.id
+        target_name = target_user.first_name
+
+    arg_str = None
+    for arg in args:
+        lower_arg = arg.lower()
+        if lower_arg in ["true", "1", "yes", "t"]:
+            is_admin_flag = True
+        elif lower_arg in ["false", "0", "no", "f", "remove"]:
+            is_admin_flag = False
+
+        if arg.startswith("@") and arg_str is None:
+            arg_str = arg
+
+    resolved_id, resolved_name = await resolve_username(arg_str, update, context)
+    if resolved_id:
+        target_id = resolved_id
+        target_name = resolved_name
+
+    if target_id is None:
+        await update.message.reply_text(
+            "Could not resolve the target user via Telegram. Please ensure the @username is correct or reply to their message."
+        )
+        return
+
+    if is_admin_flag is None:
+        await update.message.reply_text("Please provide true or false.")
+        return
+
+    # Safely fetch target and update
+    target_data = await db.get_user(target_id)
+    if not target_data:
+        # User doesn't exist, we should seed them
+        await db.record_message(
+            update.effective_chat.id, update.message.message_id, target_id
+        )
+
+    await db.update_user_admin_status(target_id, is_admin_flag)
+
+    action = (
+        "granted DB Admin powers to" if is_admin_flag else "revoked DB Admin powers for"
+    )
+    await update.message.reply_text(f"✅ Successfully {action} {target_name}.")

@@ -43,10 +43,12 @@ class Database:
                     user_id BIGINT PRIMARY KEY,
                     cxp INTEGER DEFAULT 0,
                     last_message_time TIMESTAMP,
-                    username VARCHAR(255)
+                    username VARCHAR(255),
+                    is_admin BOOLEAN DEFAULT FALSE
                 );
                 
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(255);
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
 
                 CREATE TABLE IF NOT EXISTS messages (
                     chat_id BIGINT,
@@ -144,6 +146,20 @@ class Database:
             await conn.execute(
                 "UPDATE users SET username = $2 WHERE user_id = $1", user_id, username
             )
+
+    async def update_user_admin_status(self, user_id: int, is_admin: bool):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET is_admin = $2 WHERE user_id = $1", user_id, is_admin
+            )
+
+    async def get_admin_users(self):
+        if not self.pool:
+            return []
+        async with self.pool.acquire() as conn:
+            return await conn.fetch("SELECT * FROM users WHERE is_admin = TRUE")
 
     async def update_user_cxp(self, user_id, delta_cxp, update_timestamp=False):
         if not self.pool:
