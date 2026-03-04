@@ -603,7 +603,7 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
 
 
 async def get_id_cmd(update: Update, context: CallbackContext):
-    """Test command to explicitly check API/DB username resolution and reply parsing."""
+    """Test command to explicitly check API/DB username resolution and reply parsing. (was /id, now /checkid)"""
     if (
         not update.effective_user
         or getattr(update.effective_user, "is_bot", True)
