@@ -44,6 +44,7 @@ from handlers.translation import (
     translate_fa_cmd,
     translate_tr_cmd,
 )
+from handlers.moderation import mute_cmd, kick_cmd, ban_cmd
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
 warnings.filterwarnings(
@@ -190,6 +191,11 @@ def main() -> None:
     application.add_handler(CommandHandler("es", translate_es_cmd))
     application.add_handler(CommandHandler("fa", translate_fa_cmd))
     application.add_handler(CommandHandler("tr", translate_tr_cmd))
+
+    # Moderation Handlers
+    application.add_handler(CommandHandler("mute", mute_cmd))
+    application.add_handler(CommandHandler("kick", kick_cmd))
+    application.add_handler(CommandHandler("ban", ban_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))

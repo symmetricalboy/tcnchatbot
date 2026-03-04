@@ -5,6 +5,7 @@ from telegram import Update
 from telegram.ext import CallbackContext
 
 from database import db
+from handlers.common import resolve_username, is_user_admin
 
 logger = logging.getLogger(__name__)
 
@@ -431,58 +432,6 @@ async def evaluate_reaction(update: Update, context: CallbackContext):
                 )
 
 
-async def resolve_username(
-    input_str: str, update: Update, context: CallbackContext
-) -> tuple[int | None, str | None]:
-    """
-    Centralized function to resolve a username or text_mention to a User ID and Name.
-    Strictly relies on Telegram's API and message entities.
-    Returns (user_id, user_name).
-    """
-    if not input_str and not update.message:
-        return None, None
-
-    # 1. Check for explicit text_mentions (links without @ usernames)
-    if update.message:
-        entities = update.message.parse_entities(None)
-        for ent, text in entities.items():
-            if ent.type == "text_mention" and ent.user:
-                return ent.user.id, ent.user.first_name
-
-    if not input_str:
-        return None, None
-
-    # 2. Extract potential pure username
-    username_str = input_str
-    if update.message and update.message.text:
-        # If it's a mention entity, extract just the mention text
-        entities = update.message.parse_entities(["mention"])
-        for ent, text in entities.items():
-            username_str = text
-            break
-
-    # Format to ensure @
-    if not username_str.startswith("@"):
-        username_str = f"@{username_str}"
-
-    # 3. Hit the Telegram API directly
-    try:
-        chat = await context.bot.get_chat(username_str)
-        return chat.id, chat.title or chat.first_name or username_str
-    except Exception as e:
-        # 4. Fallback to DB Tracker
-        # Database looks up by raw string without the @
-        clean_name = username_str.lstrip("@")
-        user_row = await db.get_user_by_username(clean_name)
-        if user_row:
-            return user_row.get("user_id"), username_str
-
-        logger.warning(
-            "Failed to resolve username %s via API and DB: %s", username_str, e
-        )
-        return None, None
-
-
 async def user_stats_cmd(update: Update, context: CallbackContext):
     """Handler for /level."""
     if not update.effective_user or not update.message:
@@ -758,21 +707,7 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     if getattr(update.effective_user, "is_bot", True) and update.message.sender_chat:
         actor_id = update.message.sender_chat.id
 
-    # Check admin privileges
-    is_admin = False
-    actor_data = await db.get_user(actor_id)
-    if actor_data and actor_data.get("is_admin", False):
-        is_admin = True
-
-    if not is_admin:
-        try:
-            member = await context.bot.get_chat_member(main_group_id, actor_id)
-            if member.status in ("administrator", "creator"):
-                is_admin = True
-        except Exception:
-            pass
-
-    if not is_admin:
+    if not await is_user_admin(actor_id, main_group_id, context):
         return
 
     # Parse args (could be /give 100 @user or /give @user 100)
