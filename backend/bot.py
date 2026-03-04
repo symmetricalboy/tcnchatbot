@@ -126,12 +126,14 @@ async def admin_mention(update: Update, context) -> None:
 
 async def post_init(application: Application) -> None:
     """Initialize resources after the bot starts."""
-    await db.connect()
+    # DB initialization moved to explicit call in orchestrator loop
+    pass
 
 
 async def post_shutdown(application: Application) -> None:
     """Clean up resources when the bot stops."""
-    await db.disconnect()
+    # DB disconnect moved to explicit call in orchestrator loop
+    pass
 
 
 def main() -> None:
@@ -258,6 +260,15 @@ def main() -> None:
             return Response()
 
     async def run_fastapi_and_bot():
+        # Setup explicit database connection before initializing
+        try:
+            logger.info("Initializing explicit database connection...")
+            await db.connect()
+            logger.info(f"Database Pool Initialized: {db.pool}")
+        except Exception as e:
+            logger.error(f"FATAL: Database rejected connection during startup: {e}")
+            raise
+
         # Initialize telegram-related dependencies
         await application.initialize()
         await application.start()
@@ -287,11 +298,13 @@ def main() -> None:
         server = uvicorn.Server(config)
         await server.serve()
 
-        # Shutdown
+        # Shutdown sequence
+        logger.info("Shutting down application...")
         if not PUBLIC_DOMAIN:
             await application.updater.stop()
         await application.stop()
         await application.shutdown()
+        await db.disconnect()
 
     import asyncio
 
