@@ -1,6 +1,7 @@
 import logging
 import os
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import CallbackContext
 from google import genai
 
@@ -50,6 +51,12 @@ async def _translate_message(
         return
 
     try:
+        # Trigger 'typing...' indicator in Telegram
+        if update.effective_chat:
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.TYPING
+            )
+
         # Prompt the Gemini model
         prompt = f"Translate this message into {target_language}. Respond ONLY with the translated text, no additional commentary:\n\n{text_to_translate}"
 
