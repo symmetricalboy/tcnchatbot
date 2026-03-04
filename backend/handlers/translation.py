@@ -104,3 +104,7 @@ async def translate_es_cmd(update: Update, context: CallbackContext):
 
 async def translate_fa_cmd(update: Update, context: CallbackContext):
     await _translate_message(update, context, "Persian")
+
+
+async def translate_tr_cmd(update: Update, context: CallbackContext):
+    await _translate_message(update, context, "Turkish")

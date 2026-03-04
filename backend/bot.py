@@ -40,6 +40,7 @@ from handlers.translation import (
     translate_ru_cmd,
     translate_es_cmd,
     translate_fa_cmd,
+    translate_tr_cmd,
 )
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
@@ -179,6 +180,7 @@ def main() -> None:
     application.add_handler(CommandHandler("ru", translate_ru_cmd))
     application.add_handler(CommandHandler("es", translate_es_cmd))
     application.add_handler(CommandHandler("fa", translate_fa_cmd))
+    application.add_handler(CommandHandler("tr", translate_tr_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))
