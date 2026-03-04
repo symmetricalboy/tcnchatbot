@@ -281,8 +281,8 @@ async def get_cxp_topic(update: Update, context: CallbackContext) -> int:
     except Exception as e:
         logger.error(f"Failed to update database configuraton: {e}")
         await update.message.reply_text(
-            "An error occurred while saving the configuration to the database. "
-            "Please check the logs and try again."
+            f"An error occurred while saving the configuration to the database. "
+            f"Error details: {e}\nPlease check the logs and try again."
         )
 
     context.user_data.clear()
@@ -325,7 +325,7 @@ async def save_edit_main(update: Update, context: CallbackContext) -> int:
         )
     except Exception as e:
         logger.error(f"Failed to update Main Group: {e}")
-        await update.message.reply_text("Database update failed.")
+        await update.message.reply_text(f"Database update failed: {e}")
 
     return await start(update, context)
 
@@ -366,7 +366,7 @@ async def save_edit_channel(update: Update, context: CallbackContext) -> int:
         )
     except Exception as e:
         logger.error(f"Failed to update Channel: {e}")
-        await update.message.reply_text("Database update failed.")
+        await update.message.reply_text(f"Database update failed: {e}")
 
     return await start(update, context)
 
@@ -407,7 +407,7 @@ async def save_edit_admin(update: Update, context: CallbackContext) -> int:
         )
     except Exception as e:
         logger.error(f"Failed to update Admin Group: {e}")
-        await update.message.reply_text("Database update failed.")
+        await update.message.reply_text(f"Database update failed: {e}")
 
     return await start(update, context)
 
@@ -560,7 +560,7 @@ async def save_edit_welcome(update: Update, context: CallbackContext) -> int:
         )
     except Exception as e:
         logger.error(f"Failed to update Welcome Message: {e}")
-        await update.message.reply_text("Database update failed.")
+        await update.message.reply_text(f"Database update failed: {e}")
 
     return await start(update, context)
 
@@ -599,7 +599,7 @@ async def save_edit_cxp(update: Update, context: CallbackContext) -> int:
         )
     except Exception as e:
         logger.error(f"Failed to update CXP Topic ID: {e}")
-        await update.message.reply_text("Database update failed.")
+        await update.message.reply_text(f"Database update failed: {e}")
 
     return await start(update, context)
 
