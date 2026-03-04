@@ -48,6 +48,7 @@ class Database:
                 );
                 
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(255);
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_steal_time TIMESTAMP;
 
@@ -157,6 +158,26 @@ class Database:
                 "UPDATE users SET username = $2 WHERE user_id = $1", user_id, username
             )
 
+    async def update_user_display_name(
+        self, user_id: int, display_name: str, username: str = None
+    ):
+        if not self.pool or not display_name:
+            return
+        async with self.pool.acquire() as conn:
+            if username:
+                await conn.execute(
+                    "UPDATE users SET display_name = $2, username = $3 WHERE user_id = $1",
+                    user_id,
+                    display_name,
+                    username,
+                )
+            else:
+                await conn.execute(
+                    "UPDATE users SET display_name = $2 WHERE user_id = $1",
+                    user_id,
+                    display_name,
+                )
+
     async def update_user_admin_status(self, user_id: int, is_admin: bool):
         if not self.pool:
             return
@@ -194,7 +215,8 @@ class Database:
             return None
         async with self.pool.acquire() as conn:
             count = await conn.fetchval(
-                "SELECT COUNT(*) FROM users WHERE cxp > $1 AND is_admin = FALSE", cxp
+                "SELECT COUNT(*) FROM users WHERE cxp > $1 AND (is_admin = FALSE OR is_admin IS NULL)",
+                cxp,
             )
             return count + 1
 

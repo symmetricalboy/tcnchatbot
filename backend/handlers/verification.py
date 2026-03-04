@@ -63,7 +63,10 @@ async def welcome_new_member(
             else:
                 import html
 
-                escaped_name = html.escape(new_member.first_name)
+                full_name = new_member.first_name + (
+                    f" {new_member.last_name}" if new_member.last_name else ""
+                )
+                escaped_name = html.escape(full_name)
                 mention = f'<a href="tg://user?id={new_member.id}">{escaped_name}</a>'
 
             welcome_text = config.get("welcome_message") if config else None

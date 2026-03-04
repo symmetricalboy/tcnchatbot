@@ -22,7 +22,10 @@ async def resolve_username(
         entities = update.message.parse_entities(None)
         for ent, text in entities.items():
             if ent.type == "text_mention" and ent.user:
-                return ent.user.id, ent.user.first_name
+                full_name = ent.user.first_name + (
+                    f" {ent.user.last_name}" if ent.user.last_name else ""
+                )
+                return ent.user.id, full_name
 
     if not input_str:
         return None, None
@@ -43,7 +46,16 @@ async def resolve_username(
     # 3. Hit the Telegram API directly
     try:
         chat = await context.bot.get_chat(username_str)
-        return chat.id, chat.title or chat.first_name or username_str
+        name = (
+            chat.title
+            or (
+                chat.first_name + (f" {chat.last_name}" if chat.last_name else "")
+                if chat.first_name
+                else None
+            )
+            or username_str
+        )
+        return chat.id, name
     except Exception as e:
         # 4. Fallback to DB Tracker
         # Database looks up by raw string without the @
@@ -103,8 +115,11 @@ async def get_target(
                     update.message.reply_to_message.sender_chat.title or "Channel"
                 )
             elif update.message.reply_to_message.from_user:
-                target_id = update.message.reply_to_message.from_user.id
-                target_name = update.message.reply_to_message.from_user.first_name
+                user = update.message.reply_to_message.from_user
+                target_id = user.id
+                target_name = user.first_name + (
+                    f" {user.last_name}" if getattr(user, "last_name", None) else ""
+                )
 
     # Try mention
     if not target_id and context.args:

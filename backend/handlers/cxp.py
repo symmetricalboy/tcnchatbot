@@ -217,7 +217,10 @@ async def _announce_level_up(context: CallbackContext, user, new_level: int):
 
     if cxp_topic_id and main_group_id:
         try:
-            mention = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
+            full_name = user.first_name + (
+                f" {user.last_name}" if getattr(user, "last_name", None) else ""
+            )
+            mention = f'<a href="tg://user?id={user.id}">{full_name}</a>'
             msg = f"🎉 {mention} has reached <b>Level {new_level}</b>!"
             await context.bot.send_message(
                 chat_id=main_group_id,
@@ -234,8 +237,17 @@ async def _process_db_message_and_cxp(
 ):
     """Background task to save the message and award CXP without blocking the chat."""
     await db.record_message(chat_id, msg_id, user.id)
-    if user.username:
-        await db.update_user_username(user.id, user.username)
+    first_name = getattr(user, "first_name", None)
+    if first_name:
+        last_name = getattr(user, "last_name", None)
+        display_name = first_name + (f" {last_name}" if last_name else "")
+    else:
+        display_name = getattr(
+            user, "title", getattr(user, "username", f"User {user.id}")
+        )
+    await db.update_user_display_name(
+        user.id, display_name, getattr(user, "username", None)
+    )
 
     old_level = calculate_level(current_cxp)
     success = await db.update_user_cxp(user.id, MESSAGE_CXP, update_timestamp=True)
@@ -462,7 +474,11 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
         )
     else:
         target_id = update.effective_user.id
-        target_name = update.effective_user.first_name
+        target_name = update.effective_user.first_name + (
+            f" {update.effective_user.last_name}"
+            if update.effective_user.last_name
+            else ""
+        )
 
     # Check for reply targeting another user.
     # Channels automatically "reply" to the root channel post when posting in the discussion group.
@@ -526,6 +542,7 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
                 member = await context.bot.get_chat_member(main_group_id, target_id)
                 if member.status in ("administrator", "creator"):
                     is_admin = True
+                    await db.update_user_admin_status(target_id, True)
             except Exception:
                 pass
 
@@ -590,6 +607,7 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
                 member = await context.bot.get_chat_member(main_group_id, u_id)
                 if member.status in ("administrator", "creator"):
                     is_admin = True
+                    await db.update_user_admin_status(u_id, True)
             except Exception:
                 pass
 
@@ -609,12 +627,17 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
         level = calculate_level(cxp)
         medal = medals[i] if i < len(medals) else f"#{i+1}"
 
-        name = f"User {u_id}"
-        try:
-            chat = await context.bot.get_chat(u_id)
-            name = chat.title or chat.first_name or f"Channel {u_id}"
-        except Exception:
-            pass
+        name = row.get("display_name")
+        if not name:
+            username = row.get("username")
+            if username:
+                name = f"@{username}"
+            else:
+                try:
+                    chat = await context.bot.get_chat(u_id)
+                    name = chat.title or chat.first_name or f"Channel {u_id}"
+                except Exception:
+                    name = f"User {u_id}"
 
         msg += f"{medal} **{name}** — Level {level} ({cxp:,} CXP)\n"
 
@@ -673,8 +696,11 @@ async def get_id_cmd(update: Update, context: CallbackContext):
             == update.message.message_thread_id
         ):
             target_user = update.message.reply_to_message.from_user
+            full_name = target_user.first_name + (
+                f" {target_user.last_name}" if target_user.last_name else ""
+            )
             await update.message.reply_text(
-                f"Reply Resolution Success!\nName: {target_user.first_name}\nID: `{target_user.id}`",
+                f"Reply Resolution Success!\nName: {full_name}\nID: `{target_user.id}`",
                 parse_mode="Markdown",
             )
             return
