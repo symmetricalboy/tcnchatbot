@@ -69,6 +69,7 @@ class Database:
 
     async def update_config(self, **kwargs):
         if not self.pool:
+            logger.error("update_config returning False because self.pool is None")
             return False
 
         valid_keys = {
@@ -85,18 +86,29 @@ class Database:
             if k in valid_keys:
                 values.append(v)
                 updates.append(f"{k} = ${len(values)}")
+            else:
+                logger.warning(f"update_config ignoring invalid key: {k}")
 
         if not updates:
+            logger.error(
+                f"update_config returning False because updates is empty. kwargs: {kwargs}"
+            )
             return False
 
         set_clause = ", ".join(updates)
         query = f"UPDATE bot_config SET {set_clause} WHERE id = 1"
+        logger.info(f"update_config executing: {query} with values: {values}")
 
-        async with self.pool.acquire() as conn:
-            result = await conn.execute(query, *values)
-            if result == "UPDATE 0":
-                raise Exception("Database configuration row id=1 is missing.")
-            return True
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, *values)
+                logger.info(f"update_config execute result: {result}")
+                if result == "UPDATE 0":
+                    raise Exception("Database configuration row id=1 is missing.")
+                return True
+        except Exception as e:
+            logger.error(f"update_config encountered an unexpected error: {e}")
+            raise
 
     async def get_user(self, user_id):
         if not self.pool:

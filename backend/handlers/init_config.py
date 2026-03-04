@@ -266,7 +266,7 @@ async def get_cxp_topic(update: Update, context: CallbackContext) -> int:
             cxp_topic_id=topic_id,
         )
         if not success:
-            raise Exception("Database returned False, pooling might be uninitialized.")
+            raise Exception(f"Database returned False. Pool is None: {db.pool is None}")
 
         await update.message.reply_text(
             "Configuration Complete!\n\n"
@@ -318,7 +318,7 @@ async def save_edit_main(update: Update, context: CallbackContext) -> int:
     try:
         success = await db.update_config(main_group_id=group_id)
         if not success:
-            raise Exception("Database returned False, pooling might be uninitialized.")
+            raise Exception(f"Database returned False. Pool is None: {db.pool is None}")
         await update.message.reply_text(
             f"✅ Main Group updated successfully (ID: `{group_id}`).",
             parse_mode="Markdown",
@@ -359,7 +359,7 @@ async def save_edit_channel(update: Update, context: CallbackContext) -> int:
     try:
         success = await db.update_config(channel_id=channel_id)
         if not success:
-            raise Exception("Database returned False, pooling might be uninitialized.")
+            raise Exception(f"Database returned False. Pool is None: {db.pool is None}")
         await update.message.reply_text(
             f"✅ Channel updated successfully (ID: `{channel_id}`).",
             parse_mode="Markdown",
@@ -400,7 +400,7 @@ async def save_edit_admin(update: Update, context: CallbackContext) -> int:
     try:
         success = await db.update_config(admin_group_id=admin_id)
         if not success:
-            raise Exception("Database returned False, pooling might be uninitialized.")
+            raise Exception(f"Database returned False. Pool is None: {db.pool is None}")
         await update.message.reply_text(
             f"✅ Admin Group updated successfully (ID: `{admin_id}`).",
             parse_mode="Markdown",
@@ -553,7 +553,7 @@ async def save_edit_welcome(update: Update, context: CallbackContext) -> int:
     try:
         success = await db.update_config(welcome_message=welcome_input)
         if not success:
-            raise Exception("Database returned False, pooling might be uninitialized.")
+            raise Exception(f"Database returned False. Pool is None: {db.pool is None}")
         await update.message.reply_text(
             f"✅ Welcome message updated successfully.",
             parse_mode="Markdown",
@@ -592,7 +592,7 @@ async def save_edit_cxp(update: Update, context: CallbackContext) -> int:
     try:
         success = await db.update_config(cxp_topic_id=topic_id)
         if not success:
-            raise Exception("Database returned False, pooling might be uninitialized.")
+            raise Exception(f"Database returned False. Pool is None: {db.pool is None}")
         await update.message.reply_text(
             f"✅ CXP Topic updated successfully (ID: `{topic_id}`).",
             parse_mode="Markdown",
