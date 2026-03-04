@@ -47,10 +47,10 @@ async def _translate_message(
     # or pass the text as arguments: /en Hello world
     text_to_translate = ""
 
-    if update.message.reply_to_message and update.message.reply_to_message.text:
-        text_to_translate = update.message.reply_to_message.text
-    elif context.args:
+    if context.args:
         text_to_translate = " ".join(context.args)
+    elif update.message.reply_to_message and update.message.reply_to_message.text:
+        text_to_translate = update.message.reply_to_message.text
 
     if not text_to_translate:
         await update.message.reply_text(
