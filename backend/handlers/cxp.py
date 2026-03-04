@@ -650,10 +650,15 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
     msg = (
         "🤖 **Welcome to TCN's Chatbot** 🤖\n\n"
         "I am here to manage the community, handle translation, and track community engagement.\n\n"
-        "**Core Features:**\n"
+        "**Features:**\n"
         "• **CXP System**: Earn Community Experience Points (CXP) by chatting and reacting to messages. As you level up, your reactions carry more weight!\n"
         "• **Leaderboards**: Compete with others and view the most active community members.\n"
         "• **Translations**: I can automatically translate messages between different languages so everyone can understand each other.\n\n"
+        "**Earning CXP:**\n"
+        "• **Messages**: Earn `50 CXP` for chatting (limit 1 per minute).\n"
+        "• **Reactions**: Earn or lose CXP when others react to your messages.\n"
+        "  Positive emojis give `+50 CXP`, negative emojis give `-50 CXP`.\n"
+        "• **Influence**: Higher level users multiply the CXP of their reactions! Your vote carries more weight as you rank up.\n\n"
         "To view the specific commands and how to use them, type `/commands`."
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -662,13 +667,8 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
 async def commands_cmd(update: Update, context: CallbackContext):
     """Handler for /commands to show CXP info."""
     msg = (
-        "🌟 **CXP & Leveling System Commands** 🌟\n\n"
-        "**Earning CXP:**\n"
-        "• **Messages**: Earn `50 CXP` for chatting (limit 1 per minute).\n"
-        "• **Reactions**: Earn or lose CXP when others react to your messages.\n"
-        "  Positive emojis give `+50 CXP`, negative emojis give `-50 CXP`.\n"
-        "• **Influence**: Higher level users multiply the CXP of their reactions! Your vote carries more weight as you rank up.\n\n"
-        "**User Commands:**\n"
+        "🌟 **User Commands** 🌟\n\n"
+        "**CXP Commands (Use in the CXP topic):**\n"
         "• `/level` — View your own stats and rank. Use `/level @username` to check someone else.\n"
         "• `/leaderboard` — View the top 10 CXP leaders (Admins excluded).\n"
         "• `/steal` — Steal 1-100 CXP from a random user! 1-hour cooldown.\n\n"
