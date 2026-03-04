@@ -519,6 +519,9 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
     # Channels automatically "reply" to the root channel post when posting in the discussion group.
     # Topics also automatically "reply" to the thread creation message.
     # We must explicitly exclude `is_automatic_forward` and topic root messages.
+    target_chat = None
+    target_user = None
+
     if update.message.reply_to_message and not getattr(
         update.message, "is_automatic_forward", False
     ):
@@ -533,14 +536,14 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
             target_chat = update.message.reply_to_message.sender_chat
             target_user = update.message.reply_to_message.from_user
 
-        if target_chat:
-            target_id = target_chat.id
-            target_name = (
-                target_chat.title or target_chat.username or f"Channel {target_id}"
-            )
-        elif target_user and not getattr(target_user, "is_bot", False):
-            target_id = target_user.id
-            target_name = target_user.first_name
+    if target_chat:
+        target_id = target_chat.id
+        target_name = (
+            target_chat.title or target_chat.username or f"Channel {target_id}"
+        )
+    elif target_user and not getattr(target_user, "is_bot", False):
+        target_id = target_user.id
+        target_name = target_user.first_name
 
     # Check for arguments targeting another user
     if context.args:
@@ -774,6 +777,9 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     # Try reply target
     # Channels automatically "reply" to the root channel post when posting in the discussion group.
     # We must explicitly exclude `is_automatic_forward` logic and topic roots.
+    target_chat = None
+    target_user = None
+
     if update.message.reply_to_message and not getattr(
         update.message, "is_automatic_forward", False
     ):
@@ -788,14 +794,14 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
             target_chat = update.message.reply_to_message.sender_chat
             target_user = update.message.reply_to_message.from_user
 
-            if target_chat:
-                target_id = target_chat.id
-                target_name = (
-                    target_chat.title or target_chat.username or f"Channel {target_id}"
-                )
-            elif target_user and not getattr(target_user, "is_bot", False):
-                target_id = target_user.id
-                target_name = target_user.first_name
+    if target_chat:
+        target_id = target_chat.id
+        target_name = (
+            target_chat.title or target_chat.username or f"Channel {target_id}"
+        )
+    elif target_user and not getattr(target_user, "is_bot", False):
+        target_id = target_user.id
+        target_name = target_user.first_name
 
     # Parse args to support varying formats: `/give 1000 @usr`, `/give @usr 1000`
     arg_str = None
