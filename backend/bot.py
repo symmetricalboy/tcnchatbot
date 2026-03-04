@@ -178,7 +178,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", cxp_help_cmd))
     application.add_handler(CommandHandler("give", give_cxp_cmd))
     application.add_handler(CommandHandler("checkid", get_id_cmd))
-    application.add_handler(CommandHandler("set-admin", set_admin_cmd))
+    application.add_handler(CommandHandler("setadmin", set_admin_cmd))
 
     # Translation Handlers
     application.add_handler(CommandHandler("en", translate_en_cmd))

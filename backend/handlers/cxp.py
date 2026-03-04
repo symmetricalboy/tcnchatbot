@@ -860,7 +860,7 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
 
 
 async def set_admin_cmd(update: Update, context: CallbackContext):
-    """Bot Owner only: /set-admin <true/false> [@username/reply]. Grant or remove DB admin status."""
+    """Bot Owner only: /setadmin <true/false> [@username/reply]. Grant or remove DB admin status."""
     from bot import BOT_OWNER_ID  # Ensure only the ultimate absolute owner can run this
 
     if not BOT_OWNER_ID or update.effective_user.id != BOT_OWNER_ID:
@@ -869,11 +869,11 @@ async def set_admin_cmd(update: Update, context: CallbackContext):
     if not update.effective_user or not update.message:
         return
 
-    # Parse args (can be `/set-admin true @user` or `/set-admin @user true`)
+    # Parse args (can be `/setadmin true @user` or `/setadmin @user true`)
     args = context.args
     if not args and not update.message.reply_to_message:
         await update.message.reply_text(
-            "Usage: `/set-admin [true/false] [@username]` or reply to a message with `/set-admin [true/false]`",
+            "Usage: `/setadmin [true/false] [@username]` or reply to a message with `/setadmin [true/false]`",
             parse_mode="Markdown",
         )
         return
