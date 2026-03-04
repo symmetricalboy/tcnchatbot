@@ -52,8 +52,14 @@ async def _translate_message(
 
     if context.args:
         text_to_translate = " ".join(context.args)
-    elif update.message.reply_to_message and update.message.reply_to_message.text:
-        text_to_translate = update.message.reply_to_message.text
+    if update.message.reply_to_message and update.message.reply_to_message.text:
+        # Ignore implicit topic root replies
+        if not (
+            update.message.is_topic_message
+            and update.message.reply_to_message.message_id
+            == update.message.message_thread_id
+        ):
+            text_to_translate = update.message.reply_to_message.text
 
     if not text_to_translate:
         await update.message.reply_text(

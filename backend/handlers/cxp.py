@@ -517,12 +517,21 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
 
     # Check for reply targeting another user.
     # Channels automatically "reply" to the root channel post when posting in the discussion group.
-    # We must explicitly exclude `is_automatic_forward` logic from overriding the target!
+    # Topics also automatically "reply" to the thread creation message.
+    # We must explicitly exclude `is_automatic_forward` and topic root messages.
     if update.message.reply_to_message and not getattr(
         update.message, "is_automatic_forward", False
     ):
-        target_chat = update.message.reply_to_message.sender_chat
-        target_user = update.message.reply_to_message.from_user
+        # If it's a forum topic, ignore the implicit reply to the topic starter message
+        if (
+            update.message.is_topic_message
+            and update.message.reply_to_message.message_id
+            == update.message.message_thread_id
+        ):
+            pass  # Ignore implicit topic reply
+        else:
+            target_chat = update.message.reply_to_message.sender_chat
+            target_user = update.message.reply_to_message.from_user
 
         if target_chat:
             target_id = target_chat.id
@@ -686,12 +695,18 @@ async def get_id_cmd(update: Update, context: CallbackContext):
         and not getattr(update.message, "is_automatic_forward", False)
         and getattr(update.message.reply_to_message.from_user, "id", None)
     ):
-        target_user = update.message.reply_to_message.from_user
-        await update.message.reply_text(
-            f"Reply Resolution Success!\nName: {target_user.first_name}\nID: `{target_user.id}`",
-            parse_mode="Markdown",
-        )
-        return
+        # Ignore implicit replies to the topic starter message
+        if not (
+            update.message.is_topic_message
+            and update.message.reply_to_message.message_id
+            == update.message.message_thread_id
+        ):
+            target_user = update.message.reply_to_message.from_user
+            await update.message.reply_text(
+                f"Reply Resolution Success!\nName: {target_user.first_name}\nID: `{target_user.id}`",
+                parse_mode="Markdown",
+            )
+            return
 
     # 2. Check for @username arguments
     args = context.args
@@ -758,21 +773,29 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
 
     # Try reply target
     # Channels automatically "reply" to the root channel post when posting in the discussion group.
-    # We must explicitly exclude `is_automatic_forward` logic from overriding the target!
+    # We must explicitly exclude `is_automatic_forward` logic and topic roots.
     if update.message.reply_to_message and not getattr(
         update.message, "is_automatic_forward", False
     ):
-        target_chat = update.message.reply_to_message.sender_chat
-        target_user = update.message.reply_to_message.from_user
+        # If it's a forum topic, ignore the implicit reply to the topic starter message
+        if (
+            update.message.is_topic_message
+            and update.message.reply_to_message.message_id
+            == update.message.message_thread_id
+        ):
+            pass
+        else:
+            target_chat = update.message.reply_to_message.sender_chat
+            target_user = update.message.reply_to_message.from_user
 
-        if target_chat:
-            target_id = target_chat.id
-            target_name = (
-                target_chat.title or target_chat.username or f"Channel {target_id}"
-            )
-        elif target_user and not getattr(target_user, "is_bot", False):
-            target_id = target_user.id
-            target_name = target_user.first_name
+            if target_chat:
+                target_id = target_chat.id
+                target_name = (
+                    target_chat.title or target_chat.username or f"Channel {target_id}"
+                )
+            elif target_user and not getattr(target_user, "is_bot", False):
+                target_id = target_user.id
+                target_name = target_user.first_name
 
     # Parse args to support varying formats: `/give 1000 @usr`, `/give @usr 1000`
     arg_str = None
