@@ -33,6 +33,14 @@ from handlers.cxp import (
     give_cxp_cmd,
     get_id_cmd,
 )
+from handlers.translation import (
+    translate_en_cmd,
+    translate_pt_cmd,
+    translate_id_cmd,
+    translate_ru_cmd,
+    translate_es_cmd,
+    translate_fa_cmd,
+)
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
 warnings.filterwarnings(
@@ -162,7 +170,15 @@ def main() -> None:
     application.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
     application.add_handler(CommandHandler("help", cxp_help_cmd))
     application.add_handler(CommandHandler("give", give_cxp_cmd))
-    application.add_handler(CommandHandler("id", get_id_cmd))
+    application.add_handler(CommandHandler("checkid", get_id_cmd))
+
+    # Translation Handlers
+    application.add_handler(CommandHandler("en", translate_en_cmd))
+    application.add_handler(CommandHandler("pt", translate_pt_cmd))
+    application.add_handler(CommandHandler("id", translate_id_cmd))
+    application.add_handler(CommandHandler("ru", translate_ru_cmd))
+    application.add_handler(CommandHandler("es", translate_es_cmd))
+    application.add_handler(CommandHandler("fa", translate_fa_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))

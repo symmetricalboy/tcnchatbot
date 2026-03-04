@@ -1,0 +1,99 @@
+import logging
+import os
+from telegram import Update
+from telegram.ext import CallbackContext
+from google import genai
+
+logger = logging.getLogger(__name__)
+
+# Initialize the Gemini Client
+# It automatically picks up the GEMINI_API_KEY environment variable if it's set.
+api_key = os.getenv("GEMINI_API_KEY")
+
+try:
+    gemini_client = genai.Client() if api_key else None
+except Exception as e:
+    logger.error(f"Failed to initialize Gemini client: {e}")
+    gemini_client = None
+
+
+async def _translate_message(
+    update: Update, context: CallbackContext, target_language: str
+):
+    """Generic function to handle translating a message to a target language."""
+    if not update.effective_user or getattr(update.effective_user, "is_bot", True):
+        return
+
+    if not update.message:
+        return
+
+    # To translate, the user can either reply to a message with the command
+    # or pass the text as arguments: /en Hello world
+    text_to_translate = ""
+
+    if update.message.reply_to_message and update.message.reply_to_message.text:
+        text_to_translate = update.message.reply_to_message.text
+    elif context.args:
+        text_to_translate = " ".join(context.args)
+
+    if not text_to_translate:
+        await update.message.reply_text(
+            f"Please reply to a message with `/{target_language[:2].lower()}` or type `/{target_language[:2].lower()} <text>` to translate.",
+            parse_mode="Markdown",
+        )
+        return
+
+    if not gemini_client:
+        await update.message.reply_text(
+            "Translation is currently unavailable (API key not configured)."
+        )
+        return
+
+    try:
+        # Prompt the Gemini model
+        prompt = f"Translate this message into {target_language}. Respond ONLY with the translated text, no additional commentary:\n\n{text_to_translate}"
+
+        response = gemini_client.models.generate_content(
+            model="gemini-3.1-pro-preview",
+            contents=prompt,
+        )
+
+        translated_text = response.text.strip()
+
+        if translated_text:
+            await update.message.reply_text(
+                translated_text, reply_to_message_id=update.message.message_id
+            )
+        else:
+            await update.message.reply_text("Failed to generate translation.")
+
+    except Exception as e:
+        logger.error(f"Error during translation to {target_language}: {e}")
+        await update.message.reply_text(
+            "An error occurred while trying to translate the message."
+        )
+
+
+# Feature wrappers
+async def translate_en_cmd(update: Update, context: CallbackContext):
+    await _translate_message(update, context, "English")
+
+
+async def translate_pt_cmd(update: Update, context: CallbackContext):
+    await _translate_message(update, context, "Portuguese")
+
+
+async def translate_id_cmd(update: Update, context: CallbackContext):
+    await _translate_message(update, context, "Indonesian")
+
+
+async def translate_ru_cmd(update: Update, context: CallbackContext):
+    await _translate_message(update, context, "Russian")
+
+
+async def translate_es_cmd(update: Update, context: CallbackContext):
+    await _translate_message(update, context, "Spanish")
+
+
+async def translate_fa_cmd(update: Update, context: CallbackContext):
+    await _translate_message(update, context, "Persian")
