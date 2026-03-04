@@ -485,7 +485,13 @@ async def resolve_username(
 
 async def user_stats_cmd(update: Update, context: CallbackContext):
     """Handler for /level."""
-    if not update.effective_user or getattr(update.effective_user, "is_bot", True):
+    if not update.effective_user or not update.message:
+        return
+
+    if (
+        getattr(update.effective_user, "is_bot", True)
+        and not update.message.sender_chat
+    ):
         return
 
     config = await db.get_config()
@@ -498,8 +504,16 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
     ):
         return
 
-    target_id = update.effective_user.id
-    target_name = update.effective_user.first_name
+    if getattr(update.effective_user, "is_bot", True) and update.message.sender_chat:
+        target_id = update.message.sender_chat.id
+        target_name = (
+            update.message.sender_chat.title
+            or update.message.sender_chat.username
+            or f"Channel {target_id}"
+        )
+    else:
+        target_id = update.effective_user.id
+        target_name = update.effective_user.first_name
 
     # Check for reply targeting another user
     if update.message.reply_to_message:
@@ -653,10 +667,12 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
 
 async def get_id_cmd(update: Update, context: CallbackContext):
     """Test command to explicitly check API/DB username resolution and reply parsing. (was /id, now /checkid)"""
+    if not update.effective_user or not update.message:
+        return
+
     if (
-        not update.effective_user
-        or getattr(update.effective_user, "is_bot", True)
-        or not update.message
+        getattr(update.effective_user, "is_bot", True)
+        and not update.message.sender_chat
     ):
         return
 
@@ -695,10 +711,12 @@ async def get_id_cmd(update: Update, context: CallbackContext):
 
 async def give_cxp_cmd(update: Update, context: CallbackContext):
     """Admin only: /give <val> [@username/reply]. Grant or remove CXP."""
+    if not update.effective_user or not update.message:
+        return
+
     if (
-        not update.effective_user
-        or getattr(update.effective_user, "is_bot", True)
-        or not update.message
+        getattr(update.effective_user, "is_bot", True)
+        and not update.message.sender_chat
     ):
         return
 

@@ -37,10 +37,13 @@ async def _translate_message(
     update: Update, context: CallbackContext, target_language: str
 ):
     """Generic function to handle translating a message to a target language."""
-    if not update.effective_user or getattr(update.effective_user, "is_bot", True):
+    if not update.effective_user or not update.message:
         return
 
-    if not update.message:
+    if (
+        getattr(update.effective_user, "is_bot", True)
+        and not update.message.sender_chat
+    ):
         return
 
     # To translate, the user can either reply to a message with the command
