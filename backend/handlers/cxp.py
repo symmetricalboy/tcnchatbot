@@ -225,7 +225,7 @@ async def _announce_level_up(context: CallbackContext, user, new_level: int):
                 parse_mode="HTML",
             )
         except Exception as e:
-            logger.error(f"Failed to send level up announcement: {e}")
+            logger.error("Failed to send level up announcement: %s", e)
 
 
 async def _process_db_message_and_cxp(
@@ -246,14 +246,31 @@ async def _process_db_message_and_cxp(
 
 async def track_message_activity(update: Update, context: CallbackContext):
     """Track messaging activity using an in-memory cache to prevent DB bottlenecking."""
-    if (
-        not update.effective_user
-        or getattr(update.effective_user, "is_bot", True)
-        or not update.message
-    ):
+    if not update.effective_user or not update.message:
         return
 
-    user_id = update.effective_user.id
+    # If the user is a bot, it could be an anonymous admin or channel
+    if getattr(update.effective_user, "is_bot", True):
+        # We allow messages sent on behalf of a channel or anonymous admin group
+        if not update.message.sender_chat:
+            return
+
+        user_id = update.message.sender_chat.id
+
+        # We need a fallback object to pass into _process_db_message_and_cxp
+        # We can construct a simple mocked user object with id, username, first_name
+        class MockUser:
+            def __init__(self, chat):
+                self.id = chat.id
+                self.username = chat.username
+                self.first_name = chat.title or chat.username or f"Channel {chat.id}"
+                self.is_bot = False
+
+        user_obj = MockUser(update.message.sender_chat)
+    else:
+        user_id = update.effective_user.id
+        user_obj = update.effective_user
+
     chat_id = update.effective_chat.id
 
     config = await db.get_config()
@@ -295,7 +312,7 @@ async def track_message_activity(update: Update, context: CallbackContext):
             context,
             chat_id,
             update.message.message_id,
-            update.effective_user,
+            user_obj,
             user_data.get("cxp", 0),
         )
     )
@@ -313,7 +330,7 @@ async def _resolve_reaction_emoji(reaction, context: CallbackContext) -> str | N
                 return stickers[0].emoji
         except Exception as e:
             logger.warning(
-                f"Failed to resolve custom emoji {reaction.custom_emoji_id}: {e}"
+                "Failed to resolve custom emoji %s: %s", reaction.custom_emoji_id, e
             )
     return None
 
@@ -325,8 +342,14 @@ async def evaluate_reaction(update: Update, context: CallbackContext):
 
     reaction_update = update.message_reaction
 
-    reactor_user = reaction_update.user
-    if not reactor_user or reactor_user.is_bot:
+    # If the user is missing or is a bot, try getting the actor_chat (for channels)
+    reactor_id = None
+    if reaction_update.user and not reaction_update.user.is_bot:
+        reactor_id = reaction_update.user.id
+    elif reaction_update.actor_chat:
+        reactor_id = reaction_update.actor_chat.id
+
+    if not reactor_id:
         return
 
     # Message author caching
@@ -345,10 +368,10 @@ async def evaluate_reaction(update: Update, context: CallbackContext):
         )
 
     # Don't let users farm karma on their own messages
-    if author_id == reactor_user.id:
+    if author_id == reactor_id:
         return
 
-    reactor_data = await db.get_user(reactor_user.id)
+    reactor_data = await db.get_user(reactor_id)
     if not reactor_data:
         return
 
@@ -402,7 +425,9 @@ async def evaluate_reaction(update: Update, context: CallbackContext):
                 await _announce_level_up(context, author_user, new_level)
             except Exception as e:
                 logger.warning(
-                    f"Could not fetch author {author_id} for level up announcement: {e}"
+                    "Could not fetch author %s for level up announcement: %s",
+                    author_id,
+                    e,
                 )
 
 
@@ -443,7 +468,7 @@ async def resolve_username(
     # 3. Hit the Telegram API directly
     try:
         chat = await context.bot.get_chat(username_str)
-        return chat.id, chat.first_name or username_str
+        return chat.id, chat.title or chat.first_name or username_str
     except Exception as e:
         # 4. Fallback to DB Tracker
         # Database looks up by raw string without the @
@@ -452,7 +477,9 @@ async def resolve_username(
         if user_row:
             return user_row.get("user_id"), username_str
 
-        logger.warning(f"Failed to resolve username {username_str} via API and DB: {e}")
+        logger.warning(
+            "Failed to resolve username %s via API and DB: %s", username_str, e
+        )
         return None, None
 
 
@@ -473,6 +500,20 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
 
     target_id = update.effective_user.id
     target_name = update.effective_user.first_name
+
+    # Check for reply targeting another user
+    if update.message.reply_to_message:
+        target_chat = update.message.reply_to_message.sender_chat
+        target_user = update.message.reply_to_message.from_user
+
+        if target_chat:
+            target_id = target_chat.id
+            target_name = (
+                target_chat.title or target_chat.username or f"Channel {target_id}"
+            )
+        elif target_user and not getattr(target_user, "is_bot", False):
+            target_id = target_user.id
+            target_name = target_user.first_name
 
     # Check for arguments targeting another user
     if context.args:
@@ -499,6 +540,14 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
     rank = await db.get_user_rank(cxp)
 
     next_level_cxp = 250 * (level + 1) * level
+
+    # Try our best to get a name if target_name is missing, which happens for channels
+    if not target_name:
+        try:
+            chat = await context.bot.get_chat(target_id)
+            target_name = chat.title or chat.first_name or f"Channel {target_id}"
+        except Exception:
+            target_name = f"User/Channel {target_id}"
 
     msg = (
         f"📊 **Statistics for {target_name}**\n\n"
@@ -565,7 +614,7 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
         name = f"User {u_id}"
         try:
             chat = await context.bot.get_chat(u_id)
-            name = chat.first_name
+            name = chat.title or chat.first_name or f"Channel {u_id}"
         except Exception:
             pass
 
@@ -684,11 +733,18 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     delta_cxp = None
 
     # Try reply target
-    if update.message.reply_to_message and getattr(
-        update.message.reply_to_message.from_user, "id", None
-    ):
-        target_id = update.message.reply_to_message.from_user.id
-        target_name = update.message.reply_to_message.from_user.first_name
+    if update.message.reply_to_message:
+        target_chat = update.message.reply_to_message.sender_chat
+        target_user = update.message.reply_to_message.from_user
+
+        if target_chat:
+            target_id = target_chat.id
+            target_name = (
+                target_chat.title or target_chat.username or f"Channel {target_id}"
+            )
+        elif target_user and not getattr(target_user, "is_bot", False):
+            target_id = target_user.id
+            target_name = target_user.first_name
 
     # Parse args to support varying formats: `/give 1000 @usr`, `/give @usr 1000`
     arg_str = None
