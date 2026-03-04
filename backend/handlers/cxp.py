@@ -753,17 +753,20 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     if not main_group_id or update.effective_chat.id != main_group_id:
         return
 
+    # Determine actor identity (User or Channel)
+    actor_id = update.effective_user.id
+    if getattr(update.effective_user, "is_bot", True) and update.message.sender_chat:
+        actor_id = update.message.sender_chat.id
+
     # Check admin privileges
     is_admin = False
-    actor_data = await db.get_user(update.effective_user.id)
+    actor_data = await db.get_user(actor_id)
     if actor_data and actor_data.get("is_admin", False):
         is_admin = True
 
     if not is_admin:
         try:
-            member = await context.bot.get_chat_member(
-                main_group_id, update.effective_user.id
-            )
+            member = await context.bot.get_chat_member(main_group_id, actor_id)
             if member.status in ("administrator", "creator"):
                 is_admin = True
         except Exception:
