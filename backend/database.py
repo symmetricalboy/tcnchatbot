@@ -49,6 +49,7 @@ class Database:
                 
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(255);
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS last_steal_time TIMESTAMP;
 
                 CREATE TABLE IF NOT EXISTS messages (
                     chat_id BIGINT,
@@ -61,6 +62,15 @@ class Database:
                 VALUES (1, 'Welcome {mention}!\n\n📜 Community Rules:\n- Be polite and respectful\n- No spam or unwanted advertising\n- Follow moderator instructions\n- Please use the appropriate topics for your discussions\n\n🎮 Enjoy your time in The Clean Network Community!') 
                 ON CONFLICT (id) DO NOTHING;
             """
+            )
+
+    async def update_user_steal_time(self, user_id: int):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET last_steal_time = CURRENT_TIMESTAMP WHERE user_id = $1",
+                user_id,
             )
 
     async def get_config(self):

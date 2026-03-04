@@ -950,3 +950,99 @@ async def set_admin_cmd(update: Update, context: CallbackContext):
         "granted DB Admin powers to" if is_admin_flag else "revoked DB Admin powers for"
     )
     await update.message.reply_text(f"✅ Successfully {action} {target_name}.")
+
+
+async def steal_cxp_cmd(update: Update, context: CallbackContext):
+    """Member command: /steal [@username/reply]. Steal 100 CXP with 1-hour cooldown."""
+    if not update.effective_user or not update.message:
+        return
+
+    # Check if we are in the main group
+    config = await db.get_config()
+    main_group_id = config.get("main_group_id") if config else None
+    if not main_group_id or update.effective_chat.id != main_group_id:
+        return
+
+    user_id = update.effective_user.id
+    user_name = update.effective_user.first_name
+
+    # 1. Resolve target
+    target_id = None
+    target_name = None
+
+    # Try reply target
+    if update.message.reply_to_message and not getattr(
+        update.message, "is_automatic_forward", False
+    ):
+        if not (
+            update.message.is_topic_message
+            and update.message.reply_to_message.message_id
+            == update.message.message_thread_id
+        ):
+            if update.message.reply_to_message.sender_chat:
+                target_id = update.message.reply_to_message.sender_chat.id
+                target_name = (
+                    update.message.reply_to_message.sender_chat.title
+                    or update.message.reply_to_message.sender_chat.username
+                )
+            elif (
+                update.message.reply_to_message.from_user
+                and not update.message.reply_to_message.from_user.is_bot
+            ):
+                target_id = update.message.reply_to_message.from_user.id
+                target_name = update.message.reply_to_message.from_user.first_name
+
+    # Try @username argument
+    if context.args:
+        arg_str = context.args[0]
+        resolved_id, resolved_name = await resolve_username(arg_str, update, context)
+        if resolved_id:
+            target_id = resolved_id
+            target_name = resolved_name
+
+    if not target_id:
+        await update.message.reply_text(
+            "Please provide a @username or reply to their message to steal CXP."
+        )
+        return
+
+    if target_id == user_id:
+        await update.message.reply_text("You cannot steal from yourself!")
+        return
+
+    # 2. Check Cooldown
+    user_data = await db.get_user(user_id)
+    last_steal = user_data.get("last_steal_time")
+    if last_steal:
+        now = datetime.now()
+        # last_steal is likely a datetime object from asyncpg
+        time_diff = now - last_steal
+        remaining_seconds = 3600 - time_diff.total_seconds()
+        if remaining_seconds > 0:
+            minutes = int(remaining_seconds // 60)
+            seconds = int(remaining_seconds % 60)
+            await update.message.reply_text(
+                f"⏳ You are on cooldown! Please wait `{minutes}m {seconds}s` before trying again.",
+                parse_mode="Markdown",
+            )
+            return
+
+    # 3. Perform Steal
+    target_data = await db.get_user(target_id)
+    if not target_data:
+        await update.message.reply_text("Target user not found in the system.")
+        return
+
+    STEAL_AMOUNT = 100
+
+    # Deduct from target
+    await db.update_user_cxp(target_id, -STEAL_AMOUNT)
+    # Add to sender
+    await db.update_user_cxp(user_id, STEAL_AMOUNT)
+    # Update cooldown
+    await db.update_user_steal_time(user_id)
+
+    await update.message.reply_text(
+        f"🎯 **Success!** You stole `{STEAL_AMOUNT}` CXP from **{target_name}**!",
+        parse_mode="Markdown",
+    )

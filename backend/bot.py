@@ -33,6 +33,7 @@ from handlers.cxp import (
     give_cxp_cmd,
     get_id_cmd,
     set_admin_cmd,
+    steal_cxp_cmd,
 )
 from handlers.translation import (
     translate_en_cmd,
@@ -179,6 +180,7 @@ def main() -> None:
     application.add_handler(CommandHandler("give", give_cxp_cmd))
     application.add_handler(CommandHandler("checkid", get_id_cmd))
     application.add_handler(CommandHandler("setadmin", set_admin_cmd))
+    application.add_handler(CommandHandler("steal", steal_cxp_cmd))
 
     # Translation Handlers
     application.add_handler(CommandHandler("en", translate_en_cmd))
