@@ -516,7 +516,24 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
 
     cxp = user_data.get("cxp", 0)
     level = calculate_level(cxp)
-    rank = await db.get_user_rank(cxp)
+    is_admin = user_data.get("is_admin", False)
+
+    # If not manually set as admin in DB, fallback to Telegram Group check
+    if not is_admin and config:
+        main_group_id = config.get("main_group_id")
+        if main_group_id:
+            try:
+                member = await context.bot.get_chat_member(main_group_id, target_id)
+                if member.status in ("administrator", "creator"):
+                    is_admin = True
+            except Exception:
+                pass
+
+    if is_admin:
+        rank_display = "Admin"
+    else:
+        rank = await db.get_user_rank(cxp)
+        rank_display = f"#{rank}"
 
     next_level_cxp = 250 * (level + 1) * level
 
@@ -530,7 +547,7 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
 
     msg = (
         f"📊 **Statistics for {target_name}**\n\n"
-        f"🏆 **Rank:** #{rank}\n"
+        f"🏆 **Rank:** {rank_display}\n"
         f"🔰 **Level:** {level}\n"
         f"✨ **CXP:** {cxp:,} / {next_level_cxp:,}"
     )

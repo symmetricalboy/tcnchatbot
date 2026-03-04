@@ -34,7 +34,7 @@ async def _typing_indicator_job(context: CallbackContext):
 
 
 async def _translate_message(
-    update: Update, context: CallbackContext, target_language: str
+    update: Update, context: CallbackContext, target_language: str, command_name: str
 ):
     """Generic function to handle translating a message to a target language."""
     if not update.effective_user or not update.message:
@@ -74,7 +74,7 @@ async def _translate_message(
 
     if not text_to_translate:
         await update.message.reply_text(
-            f"Please reply to a message with `/{target_language[:2].lower()}` or type `/{target_language[:2].lower()} <text>` to translate.",
+            f"Please reply to a message with `/{command_name}` or type `/{command_name} <text>` to translate.",
             parse_mode="Markdown",
         )
         return
@@ -143,28 +143,28 @@ async def _translate_message(
 
 # Feature wrappers
 async def translate_en_cmd(update: Update, context: CallbackContext):
-    await _translate_message(update, context, "English")
+    await _translate_message(update, context, "English", "en")
 
 
 async def translate_pt_cmd(update: Update, context: CallbackContext):
-    await _translate_message(update, context, "Portuguese")
+    await _translate_message(update, context, "Portuguese", "pt")
 
 
 async def translate_id_cmd(update: Update, context: CallbackContext):
-    await _translate_message(update, context, "Indonesian")
+    await _translate_message(update, context, "Indonesian", "id")
 
 
 async def translate_ru_cmd(update: Update, context: CallbackContext):
-    await _translate_message(update, context, "Russian")
+    await _translate_message(update, context, "Russian", "ru")
 
 
 async def translate_es_cmd(update: Update, context: CallbackContext):
-    await _translate_message(update, context, "Spanish")
+    await _translate_message(update, context, "Spanish", "es")
 
 
 async def translate_fa_cmd(update: Update, context: CallbackContext):
-    await _translate_message(update, context, "Persian")
+    await _translate_message(update, context, "Persian", "fa")
 
 
 async def translate_tr_cmd(update: Update, context: CallbackContext):
-    await _translate_message(update, context, "Turkish")
+    await _translate_message(update, context, "Turkish", "tr")

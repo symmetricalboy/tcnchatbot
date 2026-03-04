@@ -194,7 +194,7 @@ class Database:
             return None
         async with self.pool.acquire() as conn:
             count = await conn.fetchval(
-                "SELECT COUNT(*) FROM users WHERE cxp > $1", cxp
+                "SELECT COUNT(*) FROM users WHERE cxp > $1 AND is_admin = FALSE", cxp
             )
             return count + 1
 
