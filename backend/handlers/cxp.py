@@ -673,11 +673,11 @@ async def commands_cmd(update: Update, context: CallbackContext):
         "• `/leaderboard` — View the top 10 CXP leaders (Admins excluded).\n"
         "• `/steal` — Steal 1-100 CXP from a random user! 1-hour cooldown.\n\n"
         "**Translation Commands:**\n"
-        "Reply to a message with one of the following commands to translate it:\n"
+        "Start a message with or reply to a message with one of the following commands to translate it:\n"
         "`/en` (English), `/es` (Spanish), `/fr` (French),\n"
         "`/pt` (Portuguese), `/id` (Indonesian), `/fa` (Persian),\n"
         "`/ru` (Russian), `/uk` (Ukrainian), `/tr` (Turkish).\n"
-        "You can also use `/translate <language>` for interactive translation."
+        "You can also reply to a message with `/translate` for an interactive translation menu."
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
