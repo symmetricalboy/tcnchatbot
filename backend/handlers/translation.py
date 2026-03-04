@@ -65,6 +65,13 @@ async def _translate_message(
         )
         return
 
+    # Figure out the correct topic/thread ID.
+    # In Telegram, the "General" topic (the first one) often lacks a message_thread_id
+    # but needs to be explicitly targeted with ID 1 to avoid showing the indicator globally.
+    thread_id = update.message.message_thread_id
+    if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
+        thread_id = 1
+
     # Setup repeating typing indicator job
     typing_job = None
     if update.effective_chat:
@@ -72,7 +79,7 @@ async def _translate_message(
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action=ChatAction.TYPING,
-            message_thread_id=update.message.message_thread_id,
+            message_thread_id=thread_id,
         )
 
         # Then, schedule every 4 seconds (Telegram timeout is 5 seconds)
@@ -82,7 +89,7 @@ async def _translate_message(
             first=4,
             data={
                 "chat_id": update.effective_chat.id,
-                "message_thread_id": update.message.message_thread_id,
+                "message_thread_id": thread_id,
             },
         )
 
