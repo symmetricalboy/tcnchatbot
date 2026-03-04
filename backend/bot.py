@@ -185,11 +185,18 @@ def main() -> None:
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))
     RAILWAY_PUBLIC_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
-    PUBLIC_DOMAIN = (
+    raw_public_domain = (
         RAILWAY_PUBLIC_DOMAIN
         if RAILWAY_PUBLIC_DOMAIN
         else os.environ.get("PUBLIC_DOMAIN")
     )
+
+    PUBLIC_DOMAIN = None
+    if raw_public_domain:
+        # Strip scheme if user provided one manually
+        PUBLIC_DOMAIN = (
+            raw_public_domain.replace("https://", "").replace("http://", "").strip("/")
+        )
 
     # We need a FastAPI application to serve the bot webhooks and our Mini App API
     from fastapi import FastAPI, Request, Response
