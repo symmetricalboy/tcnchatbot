@@ -18,6 +18,21 @@ except Exception as e:
     gemini_client = None
 
 
+async def _typing_indicator_job(context: CallbackContext):
+    """Job to continually send typing indicator."""
+    chat_id = context.job.data.get("chat_id")
+    message_thread_id = context.job.data.get("message_thread_id")
+
+    try:
+        await context.bot.send_chat_action(
+            chat_id=chat_id,
+            action=ChatAction.TYPING,
+            message_thread_id=message_thread_id,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send typing action: {e}")
+
+
 async def _translate_message(
     update: Update, context: CallbackContext, target_language: str
 ):
@@ -50,13 +65,28 @@ async def _translate_message(
         )
         return
 
-    try:
-        # Trigger 'typing...' indicator in Telegram
-        if update.effective_chat:
-            await context.bot.send_chat_action(
-                chat_id=update.effective_chat.id, action=ChatAction.TYPING
-            )
+    # Setup repeating typing indicator job
+    typing_job = None
+    if update.effective_chat:
+        # Start immediately
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id,
+            action=ChatAction.TYPING,
+            message_thread_id=update.message.message_thread_id,
+        )
 
+        # Then, schedule every 4 seconds (Telegram timeout is 5 seconds)
+        typing_job = context.job_queue.run_repeating(
+            _typing_indicator_job,
+            interval=4,
+            first=4,
+            data={
+                "chat_id": update.effective_chat.id,
+                "message_thread_id": update.message.message_thread_id,
+            },
+        )
+
+    try:
         # Prompt the Gemini model
         prompt = f"Translate this message into {target_language}. Respond ONLY with the translated text, no additional commentary:\n\n{text_to_translate}"
 
@@ -79,6 +109,9 @@ async def _translate_message(
         await update.message.reply_text(
             "An error occurred while trying to translate the message."
         )
+    finally:
+        if typing_job:
+            typing_job.schedule_removal()
 
 
 # Feature wrappers
