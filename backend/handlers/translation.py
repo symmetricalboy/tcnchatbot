@@ -195,7 +195,15 @@ async def _translate_message(
             }
             lang_header = flag_map.get(target_language, f"[{target_language}]")
 
-            mention_link = f'<a href="tg://user?id={author_id}">{safe_name}</a>'
+            if author_id < 0:
+                chat_id_str = str(author_id)
+                if chat_id_str.startswith("-100"):
+                    chat_id_str = chat_id_str[4:]
+                mention_link = f'<b><a href="https://t.me/c/{chat_id_str}/999999999">{safe_name}</a></b>'
+            else:
+                mention_link = (
+                    f'<b><a href="tg://user?id={author_id}">{safe_name}</a></b>'
+                )
 
             final_message = f"<b>{lang_header}</b>\n<blockquote>{mention_link}\n{translated_text}</blockquote>"
 
@@ -507,7 +515,15 @@ async def translate_callback(update: Update, context: CallbackContext):
     import html
 
     safe_name = html.escape(author_name)
-    mention_link = f'<a href="tg://user?id={author_id}">{safe_name}</a>'
+    if author_id < 0:
+        chat_id_str = str(author_id)
+        if chat_id_str.startswith("-100"):
+            chat_id_str = chat_id_str[4:]
+        mention_link = (
+            f'<b><a href="https://t.me/c/{chat_id_str}/999999999">{safe_name}</a></b>'
+        )
+    else:
+        mention_link = f'<b><a href="tg://user?id={author_id}">{safe_name}</a></b>'
 
     # Map languages to flags for the header
     flag_map = {
