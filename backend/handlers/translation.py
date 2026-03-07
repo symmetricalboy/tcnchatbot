@@ -261,12 +261,11 @@ async def _translate_message(
                     author_name,
                 )
 
-            # Specifically for inline commands, we must save the original text under the new root ID
-            # so that future translations can access it.
-            if not should_reply_to_target:
-                await db.save_original_translation_text(
-                    update.effective_chat.id, sent_msg.message_id, text_to_translate
-                )
+            # Unconditionally save the original text under the root ID
+            # so that future recursive translations can access it.
+            await db.save_original_translation_text(
+                update.effective_chat.id, root_msg_id, text_to_translate
+            )
         else:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -684,12 +683,24 @@ async def translate_callback(update: Update, context: CallbackContext):
                 parse_mode="HTML",
                 reply_to_message_id=message_id,
             )
+
+            # Target message ID is the message being replied to (message_id = target_msg.message_id)
+            # Or the linked root ID if it was bot authored.
+            root_msg_id = message_id
+            if getattr(target_msg.from_user, "id", None) == context.bot.id:
+                link = await db.get_translation_link(chat_id, message_id)
+                if link:
+                    root_msg_id = link["original_message_id"]
+
             if author_id:
                 await db.record_message(chat_id, sent_msg.message_id, author_id)
             if author_name and author_id:
                 await db.link_translation(
-                    chat_id, sent_msg.message_id, message_id, author_id, author_name
+                    chat_id, sent_msg.message_id, root_msg_id, author_id, author_name
                 )
+
+            # Unconditionally save the pure original string under the root ID
+            await db.save_original_translation_text(chat_id, root_msg_id, original_text)
         else:
             await query.answer("Failed to generate translation.", show_alert=True)
 
