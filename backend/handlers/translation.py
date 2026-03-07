@@ -99,12 +99,14 @@ async def _translate_message(
         should_reply_to_target = True
         target_msg_id = reply_target_msg.message_id
 
+        is_chained = False
         # Check if the target message was actually sent by the bot (a previous translation)
         if getattr(reply_target_msg.from_user, "id", None) == context.bot.id:
             link = await db.get_translation_link(
                 update.effective_chat.id, reply_target_msg.message_id
             )
             if link:
+                is_chained = True
                 target_msg_id = link["original_message_id"]
                 author_id = link["author_id"]
                 author_name = link["author_name"]
@@ -116,7 +118,9 @@ async def _translate_message(
                 if original_text:
                     text_to_translate = original_text
 
-        if not target_msg_id or target_msg_id == reply_target_msg.message_id:
+        if not is_chained and (
+            not target_msg_id or target_msg_id == reply_target_msg.message_id
+        ):
             # Normal extraction if it wasn't a bot translation chained message
             if reply_target_msg.sender_chat:
                 author_id = reply_target_msg.sender_chat.id
