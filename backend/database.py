@@ -75,6 +75,15 @@ class Database:
                     PRIMARY KEY (chat_id, message_id)
                 );
                 
+                CREATE TABLE IF NOT EXISTS translated_messages (
+                    chat_id BIGINT,
+                    message_id BIGINT,
+                    original_message_id BIGINT,
+                    author_id BIGINT,
+                    author_name TEXT,
+                    PRIMARY KEY (chat_id, message_id)
+                );
+                
                 INSERT INTO bot_config (id, welcome_message) 
                 VALUES (1, 'Welcome {mention}!\n\n📜 Community Rules:\n- Be polite and respectful\n- No spam or unwanted advertising\n- Follow moderator instructions\n- Please use the appropriate topics for your discussions\n\n🎮 Enjoy your time in The Clean Network Community!') 
                 ON CONFLICT (id) DO NOTHING;
@@ -338,6 +347,40 @@ class Database:
                 chat_id,
                 message_id,
                 translated_text,
+            )
+
+    async def link_translation(
+        self,
+        chat_id: int,
+        message_id: int,
+        original_message_id: int,
+        author_id: int,
+        author_name: str,
+    ):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO translated_messages (chat_id, message_id, original_message_id, author_id, author_name)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (chat_id, message_id) DO NOTHING
+                """,
+                chat_id,
+                message_id,
+                original_message_id,
+                author_id,
+                author_name,
+            )
+
+    async def get_translation_link(self, chat_id: int, message_id: int):
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                "SELECT original_message_id, author_id, author_name FROM translated_messages WHERE chat_id = $1 AND message_id = $2",
+                chat_id,
+                message_id,
             )
 
 

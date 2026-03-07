@@ -14,8 +14,8 @@ api_key = os.getenv("GEMINI_API_KEY")
 
 try:
     gemini_client = genai.Client() if api_key else None
-except Exception as e:
-    logger.error(f"Failed to initialize Gemini client: {e}")
+except Exception as e:  # pylint: disable=broad-except
+    logger.error("Failed to initialize Gemini client: %s", e)
     gemini_client = None
 
 
@@ -30,8 +30,8 @@ async def _typing_indicator_job(context: CallbackContext):
             action=ChatAction.TYPING,
             message_thread_id=message_thread_id,
         )
-    except Exception as e:
-        logger.warning(f"Failed to send typing action: {e}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning("Failed to send typing action: %s", e)
 
 
 async def _translate_message(
@@ -47,31 +47,96 @@ async def _translate_message(
     ):
         return
 
-    # To translate, the user can either reply to a message with the command
-    # or pass the text as arguments: /en Hello world
+    command_user = update.effective_user
+    command_user_name = command_user.first_name + (
+        f" {command_user.last_name}" if getattr(command_user, "last_name", None) else ""
+    )
+    command_user_id = command_user.id
+
     text_to_translate = ""
+    reply_target_msg = update.message.reply_to_message
+
+    # Determine if it's a topic root message
+    is_topic_root = False
+    if reply_target_msg and update.effective_chat and update.effective_chat.is_forum:
+        thread_id = update.message.message_thread_id
+        if thread_id is None:
+            thread_id = reply_target_msg.message_thread_id
+
+        if (thread_id is None and reply_target_msg.message_id == 1) or (
+            thread_id is not None and reply_target_msg.message_id == thread_id
+        ):
+            is_topic_root = True
+
+    if is_topic_root:
+        reply_target_msg = None
+
+    author_name = command_user_name
+    author_id = command_user_id
+    should_reply_to_target = False
+    target_msg_id = None
 
     if context.args:
-        text_to_translate = " ".join(context.args)
-    elif update.message.reply_to_message:
-        reply = update.message.reply_to_message
+        base_html = (
+            getattr(update.message, "text_html", update.message.text)
+            or getattr(update.message, "caption_html", update.message.caption)
+            or ""
+        )
 
-        # Determine if it's a topic root message
-        # In forum topics, the first message (root) is often treated as a reply target if no specific message is selected
-        is_topic_root = False
-        if update.effective_chat and update.effective_chat.is_forum:
-            # If thread_id is None, it's the General topic (root is usually msg id 1)
-            # If thread_id is set, it's a specific topic (root is the thread_id)
-            thread_id = update.message.message_thread_id
-            if (thread_id is None and reply.message_id == 1) or (
-                reply.message_id == thread_id
-            ):
-                is_topic_root = True
+        # Split off the command (e.g. "/es") and take the rest of the HTML payload
+        parts = base_html.split(maxsplit=1)
+        text_to_translate = parts[1] if len(parts) > 1 else ""
 
-        if not is_topic_root and not getattr(
-            update.message, "is_automatic_forward", False
+        if reply_target_msg:
+            should_reply_to_target = True
+            target_msg_id = reply_target_msg.message_id
+    elif reply_target_msg:
+        text_to_translate = (
+            getattr(reply_target_msg, "text_html", reply_target_msg.text)
+            or getattr(reply_target_msg, "caption_html", reply_target_msg.caption)
+            or ""
+        )
+        should_reply_to_target = True
+        target_msg_id = reply_target_msg.message_id
+
+        is_chained = False
+        # Check if the target message was actually sent by the bot (a previous translation)
+        if getattr(reply_target_msg.from_user, "id", None) == context.bot.id:
+            link = await db.get_translation_link(
+                update.effective_chat.id, reply_target_msg.message_id
+            )
+            if link:
+                is_chained = True
+                target_msg_id = link["original_message_id"]
+                author_id = link["author_id"]
+                author_name = link["author_name"]
+
+                # Retrieve the true original text to translate again
+                original_text = await db.get_translation_original_text(
+                    update.effective_chat.id, target_msg_id
+                )
+                if original_text:
+                    text_to_translate = original_text
+
+        if not is_chained and (
+            not target_msg_id or target_msg_id == reply_target_msg.message_id
         ):
-            text_to_translate = reply.text or reply.caption or ""
+            # Normal extraction if it wasn't a bot translation chained message
+            if reply_target_msg.sender_chat:
+                author_id = reply_target_msg.sender_chat.id
+                author_name = (
+                    reply_target_msg.sender_chat.title
+                    or reply_target_msg.sender_chat.username
+                    or f"Channel {author_id}"
+                )
+            elif reply_target_msg.from_user:
+                target_user = reply_target_msg.from_user
+                author_name = target_user.first_name + (
+                    f" {target_user.last_name}"
+                    if getattr(target_user, "last_name", None)
+                    else ""
+                )
+                author_id = target_user.id
 
     if not text_to_translate:
         await update.message.reply_text(
@@ -80,43 +145,46 @@ async def _translate_message(
         )
         return
 
+    try:
+        await update.message.delete()
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning("Failed to delete translation command message: %s", e)
+
     if not gemini_client:
-        await update.message.reply_text(
-            "Translation is currently unavailable (API key not configured)."
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            message_thread_id=update.message.message_thread_id,
+            text="Translation is currently unavailable (API key not configured).",
         )
         return
 
-    # Figure out the correct topic/thread ID.
-    # In Telegram, the "General" topic (the first one) often lacks a message_thread_id
-    # but needs to be explicitly targeted with ID 1 to avoid showing the indicator globally.
     thread_id = update.message.message_thread_id
-    if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
-        thread_id = 1
+    if thread_id is None and reply_target_msg:
+        thread_id = reply_target_msg.message_thread_id
 
-    # Setup repeating typing indicator job
     typing_job = None
     if update.effective_chat:
-        # Start immediately
+        action_thread_id = thread_id
+        if update.effective_chat.is_forum and thread_id is None:
+            action_thread_id = 1
+
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action=ChatAction.TYPING,
-            message_thread_id=thread_id,
+            message_thread_id=action_thread_id,
         )
-
-        # Then, schedule every 4 seconds (Telegram timeout is 5 seconds)
         typing_job = context.job_queue.run_repeating(
             _typing_indicator_job,
             interval=4,
             first=4,
             data={
                 "chat_id": update.effective_chat.id,
-                "message_thread_id": thread_id,
+                "message_thread_id": action_thread_id,
             },
         )
 
     try:
-        # Prompt the Gemini model
-        prompt = f"Translate this message into {target_language}. Respond ONLY with the translated text, no additional commentary:\n\n{text_to_translate}"
+        prompt = f"Translate this message into {target_language}. Respond ONLY with the translated text, no additional commentary. Preserve any existing formatting and adapt it to Telegram HTML (use <b>, <i>, <a>, <code>, <pre>). Do not wrap the response in markdown code blocks:\n\n{text_to_translate}"
 
         response = gemini_client.models.generate_content(
             model="gemini-3.1-flash-lite-preview",
@@ -124,18 +192,109 @@ async def _translate_message(
         )
 
         translated_text = response.text.strip()
+        # Remove markdown html formatting wrapping if gemini still adds it
+        if translated_text.startswith("```html"):
+            translated_text = translated_text.replace("```html", "", 1)
+            if translated_text.endswith("```"):
+                translated_text = translated_text[:-3]
+        translated_text = translated_text.strip()
 
         if translated_text:
-            await update.message.reply_text(
-                translated_text, reply_to_message_id=update.message.message_id
-            )
-        else:
-            await update.message.reply_text("Failed to generate translation.")
+            import html
 
-    except Exception as e:
-        logger.error(f"Error during translation to {target_language}: {e}")
-        await update.message.reply_text(
-            "An error occurred while trying to translate the message."
+            # In Telegram HTML, < and > must be escaped if they aren't part of tags.
+            # We assume Gemini outputs valid HTML tags as requested.
+            safe_name = html.escape(author_name)
+
+            # Map languages to flags for the header
+            flag_map = {
+                "English": "🇺🇸 [EN]",
+                "Spanish": "🇲🇽 [ES]",
+                "French": "🇫🇷 [FR]",
+                "Portuguese": "🇵🇹 [PT]",
+                "Indonesian": "🇮🇩 [ID]",
+                "Persian": "🇮🇷 [FA]",
+                "Russian": "🇷🇺 [RU]",
+                "Ukrainian": "🇺🇦 [UK]",
+                "Turkish": "🇹🇷 [TR]",
+            }
+            lang_header = flag_map.get(target_language, f"[{target_language}]")
+
+            if author_id < 0:
+                chat_id_str = str(author_id)
+                if chat_id_str.startswith("-100"):
+                    chat_id_str = chat_id_str[4:]
+                mention_link = f'<b><a href="https://t.me/c/{chat_id_str}/999999999">{safe_name}</a></b>'
+            else:
+                mention_link = (
+                    f'<b><a href="tg://user?id={author_id}">{safe_name}</a></b>'
+                )
+
+            final_message = f"<b>{lang_header}</b>\n<blockquote>{mention_link}\n{translated_text}</blockquote>"
+
+            send_kwargs = {
+                "chat_id": update.effective_chat.id,
+                "message_thread_id": thread_id,
+                "text": final_message,
+                "parse_mode": "HTML",
+            }
+            if should_reply_to_target and target_msg_id:
+                send_kwargs["reply_to_message_id"] = target_msg_id
+
+            sent_msg = await context.bot.send_message(**send_kwargs)
+
+            # Record message for CXP attribution and translation linkage
+            if author_id:
+                await db.record_message(
+                    update.effective_chat.id, sent_msg.message_id, author_id
+                )
+
+            # If there's no target message (e.g., inline command), the bot's sent message BECOMES the root
+            root_msg_id = (
+                target_msg_id
+                if (should_reply_to_target and target_msg_id)
+                else sent_msg.message_id
+            )
+
+            if author_id and author_name:
+                await db.link_translation(
+                    update.effective_chat.id,
+                    sent_msg.message_id,
+                    root_msg_id,
+                    author_id,
+                    author_name,
+                )
+
+            # Unconditionally save the original text under the root ID
+            # so that future recursive translations can access it.
+            await db.save_original_translation_text(
+                update.effective_chat.id, root_msg_id, text_to_translate
+            )
+
+            # Auto-delete the newly generated translation message after 60 seconds
+            # ONLY if it was generated as a reply (not a permanent inline stand-alone).
+            if should_reply_to_target:
+                context.job_queue.run_once(
+                    _delete_message_job,
+                    60,
+                    data={
+                        "chat_id": sent_msg.chat_id,
+                        "message_id": sent_msg.message_id,
+                    },
+                )
+        else:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                message_thread_id=thread_id,
+                text="Failed to generate translation.",
+            )
+
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Error during translation to %s: %s", target_language, e)
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            message_thread_id=thread_id,
+            text="An error occurred while trying to translate the message.",
         )
     finally:
         if typing_job:
@@ -179,49 +338,119 @@ async def translate_uk_cmd(update: Update, context: CallbackContext):
     await _translate_message(update, context, "Ukrainian", "uk")
 
 
+async def _delete_message_job(context: CallbackContext):
+    """Job to automatically delete a message."""
+    chat_id = context.job.data.get("chat_id")
+    message_id = context.job.data.get("message_id")
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+
 async def translate_interactive_cmd(update: Update, context: CallbackContext):
     """Handler for the /translate command providing an interactive inline keyboard."""
     if not update.effective_user or not update.message:
         return
 
-    # Must be a reply
     reply = update.message.reply_to_message
-    if not reply:
-        await update.message.reply_text(
-            "Please reply to a message with `/translate` to choose a language.",
-            parse_mode="Markdown",
-        )
-        return
 
-    # Check for extra arguments (should be none)
-    if context.args:
-        await update.message.reply_text(
-            "The `/translate` command only works as a reply with no extra text. For quick translation with text, use explicit language commands like `/en`.",
-            parse_mode="Markdown",
-        )
-        return
-
-    # Ensure valid message to translate
+    # Determine if it's a topic root message
     is_topic_root = False
-    if update.effective_chat and update.effective_chat.is_forum:
+    if reply and update.effective_chat and update.effective_chat.is_forum:
         thread_id = update.message.message_thread_id
+        if thread_id is None:
+            thread_id = reply.message_thread_id
+
         if (thread_id is None and reply.message_id == 1) or (
-            reply.message_id == thread_id
+            thread_id is not None and reply.message_id == thread_id
         ):
             is_topic_root = True
 
-    if is_topic_root or getattr(update.message, "is_automatic_forward", False):
-        await update.message.reply_text("Cannot translate this type of message.")
+    if is_topic_root:
+        reply = None
+
+    if not reply or context.args:
+        try:
+            await update.message.delete()
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+        thread_id = update.message.message_thread_id
+        if thread_id is None and update.message.reply_to_message:
+            thread_id = update.message.reply_to_message.message_thread_id
+
+        send_thread_id = thread_id
+        if (
+            update.effective_chat
+            and update.effective_chat.is_forum
+            and thread_id is None
+        ):
+            send_thread_id = 1
+
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            message_thread_id=send_thread_id,
+            text=(
+                "The `/translate` command only works as a reply with no extra text. "
+                "Please reply to a message with `/translate` to choose a language."
+            ),
+            parse_mode="Markdown",
+        )
+        context.job_queue.run_once(
+            _delete_message_job,
+            60,
+            data={"chat_id": msg.chat_id, "message_id": msg.message_id},
+        )
         return
 
-    text_to_translate = reply.text or reply.caption or ""
+    # Delete command message
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    thread_id = update.message.message_thread_id
+    if thread_id is None and reply:
+        thread_id = reply.message_thread_id
+
+    send_thread_id = thread_id
+    if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
+        send_thread_id = 1
+
+    text_to_translate = (
+        getattr(reply, "text_html", reply.text)
+        or getattr(reply, "caption_html", reply.caption)
+        or ""
+    )
     if not text_to_translate:
-        await update.message.reply_text("The replied message does not contain text.")
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            message_thread_id=send_thread_id,
+            text="The replied message does not contain text.",
+        )
+        context.job_queue.run_once(
+            _delete_message_job,
+            60,
+            data={"chat_id": msg.chat_id, "message_id": msg.message_id},
+        )
         return
+
+    target_msg_id = reply.message_id
+    if getattr(reply.from_user, "id", None) == context.bot.id:
+        link = await db.get_translation_link(update.effective_chat.id, reply.message_id)
+        if link:
+            target_msg_id = link["original_message_id"]
+
+            original_text = await db.get_translation_original_text(
+                update.effective_chat.id, target_msg_id
+            )
+            if original_text:
+                text_to_translate = original_text
 
     # Store the original text in DB to retrieve it during callback
     chat_id = update.effective_chat.id
-    message_id = reply.message_id
+    message_id = target_msg_id
     await db.save_original_translation_text(chat_id, message_id, text_to_translate)
 
     # Build Keyboard (3 per line)
@@ -262,10 +491,19 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
         ],
     ]
 
-    await update.message.reply_text(
-        "Select a language to translate to:",
+    msg = await context.bot.send_message(
+        chat_id=chat_id,
+        message_thread_id=thread_id,
+        text="Select a language to translate to:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         reply_to_message_id=reply.message_id,
+    )
+
+    # Auto delete the menu after 1 minute
+    context.job_queue.run_once(
+        _delete_message_job,
+        60,
+        data={"chat_id": msg.chat_id, "message_id": msg.message_id},
     )
 
 
@@ -275,6 +513,12 @@ async def translate_callback(update: Update, context: CallbackContext):
 
     if not query.data.startswith("tr_"):
         return
+
+    # Delete the button menu message as soon as a selection is made
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
 
     # Parse tr_{chat_id}_{message_id}_{lang}
     parts = query.data.split("_")
@@ -304,14 +548,87 @@ async def translate_callback(update: Update, context: CallbackContext):
         await query.answer("Unsupported language.", show_alert=True)
         return
 
+    # Extract original author info for the header
+    target_msg = query.message.reply_to_message
+    if target_msg:
+        if getattr(target_msg.from_user, "id", None) == context.bot.id:
+            link = await db.get_translation_link(chat_id, target_msg.message_id)
+            if link:
+                author_id = link["author_id"]
+                author_name = link["author_name"]
+            else:
+                author_id = context.bot.id
+                author_name = context.bot.first_name
+        elif target_msg.sender_chat:
+            author_id = target_msg.sender_chat.id
+            author_name = (
+                target_msg.sender_chat.title
+                or target_msg.sender_chat.username
+                or f"Channel {author_id}"
+            )
+        elif target_msg.from_user:
+            author_id = target_msg.from_user.id
+            author_name = target_msg.from_user.first_name + (
+                f" {target_msg.from_user.last_name}"
+                if target_msg.from_user.last_name
+                else ""
+            )
+        else:
+            author_id = 0
+            author_name = "User"
+    else:
+        author_id = 0
+        author_name = "User"
+
+    thread_id = query.message.message_thread_id
+    if thread_id is None and target_msg:
+        thread_id = target_msg.message_thread_id
+
     # Check cache first
     cached_text = await db.get_translation(chat_id, message_id, lang_code)
+
+    import html
+
+    safe_name = html.escape(author_name)
+    if author_id < 0:
+        chat_id_str = str(author_id)
+        if chat_id_str.startswith("-100"):
+            chat_id_str = chat_id_str[4:]
+        mention_link = (
+            f'<b><a href="https://t.me/c/{chat_id_str}/999999999">{safe_name}</a></b>'
+        )
+    else:
+        mention_link = f'<b><a href="tg://user?id={author_id}">{safe_name}</a></b>'
+
+    # Map languages to flags for the header
+    flag_map = {
+        "English": "🇺🇸 [EN]",
+        "Spanish": "🇲🇽 [ES]",
+        "French": "🇫🇷 [FR]",
+        "Portuguese": "🇵🇹 [PT]",
+        "Indonesian": "🇮🇩 [ID]",
+        "Persian": "🇮🇷 [FA]",
+        "Russian": "🇷🇺 [RU]",
+        "Ukrainian": "🇺🇦 [UK]",
+        "Turkish": "🇹🇷 [TR]",
+    }
+    lang_header = flag_map.get(target_language, f"[{target_language}]")
+
     if cached_text:
-        # Show alert. Telegram cuts it at ~200 chars.
-        display_text = cached_text
-        if len(display_text) > 200:
-            display_text = display_text[:197] + "..."
-        await query.answer(display_text, show_alert=True)
+        final_message = f"<b>{lang_header}</b>\n<blockquote>{mention_link}\n{cached_text}</blockquote>"
+        sent_msg = await context.bot.send_message(
+            chat_id=chat_id,
+            message_thread_id=thread_id,
+            text=final_message,
+            parse_mode="HTML",
+            reply_to_message_id=message_id,
+        )
+        if author_id:
+            await db.record_message(chat_id, sent_msg.message_id, author_id)
+        if author_name and author_id:
+            await db.link_translation(
+                chat_id, sent_msg.message_id, message_id, author_id, author_name
+            )
         return
 
     # Load original text to translate
@@ -330,9 +647,33 @@ async def translate_callback(update: Update, context: CallbackContext):
         )
         return
 
-    # We do NOT answer the query yet! Let the loading spinner spin.
+    typing_job = None
+    if update.effective_chat:
+        action_thread_id = thread_id
+        if update.effective_chat.is_forum and thread_id is None:
+            action_thread_id = 1
+
+        try:
+            await context.bot.send_chat_action(
+                chat_id=chat_id,
+                action=ChatAction.TYPING,
+                message_thread_id=action_thread_id,
+            )
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("Initial typing indicator failed: %s", e)
+
+        typing_job = context.job_queue.run_repeating(
+            _typing_indicator_job,
+            interval=4,
+            first=4,
+            data={
+                "chat_id": chat_id,
+                "message_thread_id": action_thread_id,
+            },
+        )
+
     try:
-        prompt = f"Translate this message into {target_language}. Respond ONLY with the translated text, no additional commentary:\n\n{original_text}"
+        prompt = f"Translate this message into {target_language}. Respond ONLY with the translated text, no additional commentary. Preserve any existing formatting and adapt it to Telegram HTML (use <b>, <i>, <a>, <code>, <pre>). Do not wrap the response in markdown code blocks:\n\n{original_text}"
 
         response = gemini_client.models.generate_content(
             model="gemini-3.1-flash-lite-preview",
@@ -340,24 +681,62 @@ async def translate_callback(update: Update, context: CallbackContext):
         )
 
         translated_text = response.text.strip()
+        if translated_text.startswith("```html"):
+            translated_text = translated_text.replace("```html", "", 1)
+            if translated_text.endswith("```"):
+                translated_text = translated_text[:-3]
+        translated_text = translated_text.strip()
 
         if translated_text:
             # Cache the result
             await db.save_translation(chat_id, message_id, lang_code, translated_text)
 
-            # Show alert
-            display_text = translated_text
-            if len(display_text) > 200:
-                display_text = display_text[:197] + "..."
+            final_message = f"<b>{lang_header}</b>\n<blockquote>{mention_link}\n{translated_text}</blockquote>"
+            sent_msg = await context.bot.send_message(
+                chat_id=chat_id,
+                message_thread_id=thread_id,
+                text=final_message,
+                parse_mode="HTML",
+                reply_to_message_id=message_id,
+            )
 
-            await query.answer(display_text, show_alert=True)
+            # Target message ID is the message being replied to (message_id = target_msg.message_id)
+            # Or the linked root ID if it was bot authored.
+            root_msg_id = message_id
+            if getattr(target_msg.from_user, "id", None) == context.bot.id:
+                link = await db.get_translation_link(chat_id, message_id)
+                if link:
+                    root_msg_id = link["original_message_id"]
+
+            if author_id:
+                await db.record_message(chat_id, sent_msg.message_id, author_id)
+            if author_name and author_id:
+                await db.link_translation(
+                    chat_id, sent_msg.message_id, root_msg_id, author_id, author_name
+                )
+
+            # Unconditionally save the pure original string under the root ID
+            await db.save_original_translation_text(chat_id, root_msg_id, original_text)
+
+            # Auto-delete the newly generated translation message after 60 seconds
+            # since interactive callbacks are always executed as replies.
+            context.job_queue.run_once(
+                _delete_message_job,
+                60,
+                data={"chat_id": sent_msg.chat_id, "message_id": sent_msg.message_id},
+            )
         else:
             await query.answer("Failed to generate translation.", show_alert=True)
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         logger.error(
-            f"Error during interactive translation callback to {target_language}: {e}"
+            "Error during interactive translation callback to %s: %s",
+            target_language,
+            e,
         )
         await query.answer(
             "An error occurred while generating the translation.", show_alert=True
         )
+    finally:
+        if typing_job:
+            typing_job.schedule_removal()
