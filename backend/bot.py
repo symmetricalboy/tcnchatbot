@@ -297,12 +297,12 @@ def main() -> None:
         await application.initialize()
         await application.start()
 
-        try:
-            from handlers.cxp import backfill_member_tags
+        # Try:
+        #     from handlers.cxp import backfill_member_tags
 
-            context_task = asyncio.create_task(backfill_member_tags(application.bot))
-        except Exception as e:
-            logger.error("Failed to start backfill member tags task: %s", e)
+        #     context_task = asyncio.create_task(backfill_member_tags(application.bot))
+        # except Exception as e:
+        #     logger.error("Failed to start backfill member tags task: %s", e)
 
         if PUBLIC_DOMAIN:
             logger.info(

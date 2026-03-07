@@ -293,27 +293,27 @@ async def _update_member_tag(bot, user_id: int, new_level: int):
             break
 
 
-async def backfill_member_tags(bot):
-    """Temporary function to backfill member tags for all existing users on startup."""
-    logger.info("Starting CXP member tag backfill...")
-    if not db.pool:
-        logger.warning("DB pool not initialized, skipping backfill.")
-        return
+# async def backfill_member_tags(bot):
+#     """Temporary function to backfill member tags for all existing users on startup."""
+#     logger.info("Starting CXP member tag backfill...")
+#     if not db.pool:
+#         logger.warning("DB pool not initialized, skipping backfill.")
+#         return
 
-    async with db.pool.acquire() as conn:
-        users = await conn.fetch("SELECT user_id, cxp FROM users")
+#     async with db.pool.acquire() as conn:
+#         users = await conn.fetch("SELECT user_id, cxp FROM users")
 
-    count = 0
-    for row in users:
-        user_id = row["user_id"]
-        cxp = row.get("cxp", 0)
-        level = calculate_level(cxp)
-        if level >= 1:
-            await _update_member_tag(bot, user_id, level)
-            count += 1
-            await asyncio.sleep(0.1)  # Add slight delay to prevent massive 429 waves
+#     count = 0
+#     for row in users:
+#         user_id = row["user_id"]
+#         cxp = row.get("cxp", 0)
+#         level = calculate_level(cxp)
+#         if level >= 1:
+#             await _update_member_tag(bot, user_id, level)
+#             count += 1
+#             await asyncio.sleep(0.1)  # Add slight delay to prevent massive 429 waves
 
-    logger.info("Finished CXP member tag backfill for %s users.", count)
+#     logger.info("Finished CXP member tag backfill for %s users.", count)
 
 
 async def _announce_level_up(context: CallbackContext, user, new_level: int):
