@@ -139,10 +139,14 @@ async def _translate_message(
 
     typing_job = None
     if update.effective_chat:
+        action_thread_id = thread_id
+        if update.effective_chat.is_forum and thread_id is None:
+            action_thread_id = 1
+
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action=ChatAction.TYPING,
-            message_thread_id=thread_id,
+            message_thread_id=action_thread_id,
         )
         typing_job = context.job_queue.run_repeating(
             _typing_indicator_job,
@@ -150,7 +154,7 @@ async def _translate_message(
             first=4,
             data={
                 "chat_id": update.effective_chat.id,
-                "message_thread_id": thread_id,
+                "message_thread_id": action_thread_id,
             },
         )
 
@@ -317,9 +321,17 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
         if thread_id is None and update.message.reply_to_message:
             thread_id = update.message.reply_to_message.message_thread_id
 
+        send_thread_id = thread_id
+        if (
+            update.effective_chat
+            and update.effective_chat.is_forum
+            and thread_id is None
+        ):
+            send_thread_id = 1
+
         msg = await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            message_thread_id=thread_id,
+            message_thread_id=send_thread_id,
             text=(
                 "The `/translate` command only works as a reply with no extra text. "
                 "Please reply to a message with `/translate` to choose a language."
@@ -343,8 +355,9 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
     if thread_id is None and reply:
         thread_id = reply.message_thread_id
 
+    send_thread_id = thread_id
     if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
-        thread_id = 1
+        send_thread_id = 1
 
     text_to_translate = (
         getattr(reply, "text_html_urled", getattr(reply, "text_html", reply.text))
@@ -356,7 +369,7 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
     if not text_to_translate:
         msg = await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            message_thread_id=thread_id,
+            message_thread_id=send_thread_id,
             text="The replied message does not contain text.",
         )
         context.job_queue.run_once(
