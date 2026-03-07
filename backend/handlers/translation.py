@@ -78,38 +78,22 @@ async def _translate_message(
 
     if context.args:
         base_html = (
-            getattr(
-                update.message,
-                "text_html_urled",
-                getattr(update.message, "text_html", update.message.text),
-            )
-            or getattr(
-                update.message,
-                "caption_html_urled",
-                getattr(update.message, "caption_html", update.message.caption),
-            )
+            getattr(update.message, "text_html", update.message.text)
+            or getattr(update.message, "caption_html", update.message.caption)
             or ""
         )
-        import re
 
-        text_to_translate = re.sub(
-            r"^(?:/[a-zA-Z0-9_]+(?:@[a-zA-Z0-9_]+)?)\s*", "", base_html, count=1
-        )
+        # Split off the command (e.g. "/es") and take the rest of the HTML payload
+        parts = base_html.split(maxsplit=1)
+        text_to_translate = parts[1] if len(parts) > 1 else ""
+
         if reply_target_msg:
             should_reply_to_target = True
             target_msg_id = reply_target_msg.message_id
     elif reply_target_msg:
         text_to_translate = (
-            getattr(
-                reply_target_msg,
-                "text_html_urled",
-                getattr(reply_target_msg, "text_html", reply_target_msg.text),
-            )
-            or getattr(
-                reply_target_msg,
-                "caption_html_urled",
-                getattr(reply_target_msg, "caption_html", reply_target_msg.caption),
-            )
+            getattr(reply_target_msg, "text_html", reply_target_msg.text)
+            or getattr(reply_target_msg, "caption_html", reply_target_msg.caption)
             or ""
         )
         should_reply_to_target = True
@@ -260,13 +244,28 @@ async def _translate_message(
                 await db.record_message(
                     update.effective_chat.id, sent_msg.message_id, author_id
                 )
-            if target_msg_id and author_id and author_name:
+
+            # If there's no target message (e.g., inline command), the bot's sent message BECOMES the root
+            root_msg_id = (
+                target_msg_id
+                if (should_reply_to_target and target_msg_id)
+                else sent_msg.message_id
+            )
+
+            if author_id and author_name:
                 await db.link_translation(
                     update.effective_chat.id,
                     sent_msg.message_id,
-                    target_msg_id,
+                    root_msg_id,
                     author_id,
                     author_name,
+                )
+
+            # Specifically for inline commands, we must save the original text under the new root ID
+            # so that future translations can access it.
+            if not should_reply_to_target:
+                await db.save_original_translation_text(
+                    update.effective_chat.id, sent_msg.message_id, text_to_translate
                 )
         else:
             await context.bot.send_message(
@@ -405,10 +404,8 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
         send_thread_id = 1
 
     text_to_translate = (
-        getattr(reply, "text_html_urled", getattr(reply, "text_html", reply.text))
-        or getattr(
-            reply, "caption_html_urled", getattr(reply, "caption_html", reply.caption)
-        )
+        getattr(reply, "text_html", reply.text)
+        or getattr(reply, "caption_html", reply.caption)
         or ""
     )
     if not text_to_translate:
