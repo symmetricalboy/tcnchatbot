@@ -247,7 +247,7 @@ async def _update_member_tag(bot, user_id: int, new_level: int):
         url = f"{bot.base_url}/setChatMemberTag"
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                url, json={"chat_id": main_group_id, "user_id": user_id, "tag": tag}
+                url, data={"chat_id": main_group_id, "user_id": user_id, "tag": tag}
             )
             data = resp.json()
             if not data.get("ok"):
@@ -641,7 +641,7 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
     # Check for arguments targeting another user
     if context.args:
         # We are seeking a different user. Nullify the default target_id.
-        arg_str = context.args[0]
+        arg_str = " ".join(context.args)
         resolved_id, resolved_name = await resolve_username(arg_str, update, context)
 
         if resolved_id:
@@ -1005,16 +1005,21 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
         target_id = target_user.id
         target_name = target_user.first_name
 
-    # Parse args to support varying formats: `/give 1000 @usr`, `/give @usr 1000`
+    # Parse args to support varying formats: `/give 1000 @usr`, `/give John Doe 1000`
     arg_str = None
-    for arg in args:
-        try:
-            delta_cxp = int(arg)
-        except ValueError:
-            pass
+    target_args = []
 
-        if arg.startswith("@") and arg_str is None:
-            arg_str = arg
+    for arg in args:
+        if delta_cxp is None:
+            try:
+                delta_cxp = int(arg)
+                continue
+            except ValueError:
+                pass
+        target_args.append(arg)
+
+    if target_args:
+        arg_str = " ".join(target_args)
 
     # Attempt resolution to allow explicit usernames to override a reply target
     # If no explicit @ string was found, still pass it through for text_mentions
@@ -1104,15 +1109,21 @@ async def set_admin_cmd(update: Update, context: CallbackContext):
         target_name = target_user.first_name
 
     arg_str = None
+    target_args = []
+
     for arg in args:
         lower_arg = arg.lower()
-        if lower_arg in ["true", "1", "yes", "t"]:
+        if is_admin_flag is None and lower_arg in ["true", "1", "yes", "t"]:
             is_admin_flag = True
-        elif lower_arg in ["false", "0", "no", "f", "remove"]:
+            continue
+        elif is_admin_flag is None and lower_arg in ["false", "0", "no", "f", "remove"]:
             is_admin_flag = False
+            continue
 
-        if arg.startswith("@") and arg_str is None:
-            arg_str = arg
+        target_args.append(arg)
+
+    if target_args:
+        arg_str = " ".join(target_args)
 
     resolved_id, resolved_name = await resolve_username(arg_str, update, context)
     if resolved_id:
