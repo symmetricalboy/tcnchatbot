@@ -14,7 +14,7 @@ api_key = os.getenv("GEMINI_API_KEY")
 
 try:
     gemini_client = genai.Client() if api_key else None
-except Exception as e:
+except Exception as e:  # pylint: disable=broad-except
     logger.error("Failed to initialize Gemini client: %s", e)
     gemini_client = None
 
@@ -30,8 +30,8 @@ async def _typing_indicator_job(context: CallbackContext):
             action=ChatAction.TYPING,
             message_thread_id=message_thread_id,
         )
-    except Exception as e:
-        logger.warning(f"Failed to send typing action: {e}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning("Failed to send typing action: %s", e)
 
 
 async def _translate_message(
@@ -77,7 +77,24 @@ async def _translate_message(
     target_msg_id = None
 
     if context.args:
-        text_to_translate = " ".join(context.args)
+        base_html = (
+            getattr(
+                update.message,
+                "text_html_urled",
+                getattr(update.message, "text_html", update.message.text),
+            )
+            or getattr(
+                update.message,
+                "caption_html_urled",
+                getattr(update.message, "caption_html", update.message.caption),
+            )
+            or ""
+        )
+        import re
+
+        text_to_translate = re.sub(
+            r"^(?:/[a-zA-Z0-9_]+(?:@[a-zA-Z0-9_]+)?)\s*", "", base_html, count=1
+        )
         if reply_target_msg:
             should_reply_to_target = True
             target_msg_id = reply_target_msg.message_id
@@ -97,21 +114,41 @@ async def _translate_message(
         )
         should_reply_to_target = True
         target_msg_id = reply_target_msg.message_id
-        if reply_target_msg.sender_chat:
-            author_id = reply_target_msg.sender_chat.id
-            author_name = (
-                reply_target_msg.sender_chat.title
-                or reply_target_msg.sender_chat.username
-                or f"Channel {author_id}"
+
+        # Check if the target message was actually sent by the bot (a previous translation)
+        if getattr(reply_target_msg.from_user, "id", None) == context.bot.id:
+            link = await db.get_translation_link(
+                update.effective_chat.id, reply_target_msg.message_id
             )
-        elif reply_target_msg.from_user:
-            target_user = reply_target_msg.from_user
-            author_name = target_user.first_name + (
-                f" {target_user.last_name}"
-                if getattr(target_user, "last_name", None)
-                else ""
-            )
-            author_id = target_user.id
+            if link:
+                target_msg_id = link["original_message_id"]
+                author_id = link["author_id"]
+                author_name = link["author_name"]
+
+                # Retrieve the true original text to translate again
+                original_text = await db.get_translation_original_text(
+                    update.effective_chat.id, target_msg_id
+                )
+                if original_text:
+                    text_to_translate = original_text
+
+        if not target_msg_id or target_msg_id == reply_target_msg.message_id:
+            # Normal extraction if it wasn't a bot translation chained message
+            if reply_target_msg.sender_chat:
+                author_id = reply_target_msg.sender_chat.id
+                author_name = (
+                    reply_target_msg.sender_chat.title
+                    or reply_target_msg.sender_chat.username
+                    or f"Channel {author_id}"
+                )
+            elif reply_target_msg.from_user:
+                target_user = reply_target_msg.from_user
+                author_name = target_user.first_name + (
+                    f" {target_user.last_name}"
+                    if getattr(target_user, "last_name", None)
+                    else ""
+                )
+                author_id = target_user.id
 
     if not text_to_translate:
         await update.message.reply_text(
@@ -122,8 +159,8 @@ async def _translate_message(
 
     try:
         await update.message.delete()
-    except Exception as e:
-        logger.warning(f"Failed to delete translation command message: {e}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.warning("Failed to delete translation command message: %s", e)
 
     if not gemini_client:
         await context.bot.send_message(
@@ -218,10 +255,18 @@ async def _translate_message(
 
             sent_msg = await context.bot.send_message(**send_kwargs)
 
-            # Record message for CXP attribution
+            # Record message for CXP attribution and translation linkage
             if author_id:
                 await db.record_message(
                     update.effective_chat.id, sent_msg.message_id, author_id
+                )
+            if target_msg_id and author_id and author_name:
+                await db.link_translation(
+                    update.effective_chat.id,
+                    sent_msg.message_id,
+                    target_msg_id,
+                    author_id,
+                    author_name,
                 )
         else:
             await context.bot.send_message(
@@ -230,8 +275,8 @@ async def _translate_message(
                 text="Failed to generate translation.",
             )
 
-    except Exception as e:
-        logger.error(f"Error during translation to {target_language}: {e}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Error during translation to %s: %s", target_language, e)
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             message_thread_id=thread_id,
@@ -285,7 +330,7 @@ async def _delete_message_job(context: CallbackContext):
     message_id = context.job.data.get("message_id")
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
         pass
 
 
@@ -314,7 +359,7 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
     if not reply or context.args:
         try:
             await update.message.delete()
-        except Exception:
+        except Exception:  # pylint: disable=broad-except
             pass
 
         thread_id = update.message.message_thread_id
@@ -379,9 +424,21 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
         )
         return
 
+    target_msg_id = reply.message_id
+    if getattr(reply.from_user, "id", None) == context.bot.id:
+        link = await db.get_translation_link(update.effective_chat.id, reply.message_id)
+        if link:
+            target_msg_id = link["original_message_id"]
+
+            original_text = await db.get_translation_original_text(
+                update.effective_chat.id, target_msg_id
+            )
+            if original_text:
+                text_to_translate = original_text
+
     # Store the original text in DB to retrieve it during callback
     chat_id = update.effective_chat.id
-    message_id = reply.message_id
+    message_id = target_msg_id
     await db.save_original_translation_text(chat_id, message_id, text_to_translate)
 
     # Build Keyboard (3 per line)
@@ -482,7 +539,15 @@ async def translate_callback(update: Update, context: CallbackContext):
     # Extract original author info for the header
     target_msg = query.message.reply_to_message
     if target_msg:
-        if target_msg.sender_chat:
+        if getattr(target_msg.from_user, "id", None) == context.bot.id:
+            link = await db.get_translation_link(chat_id, target_msg.message_id)
+            if link:
+                author_id = link["author_id"]
+                author_name = link["author_name"]
+            else:
+                author_id = context.bot.id
+                author_name = context.bot.first_name
+        elif target_msg.sender_chat:
             author_id = target_msg.sender_chat.id
             author_name = (
                 target_msg.sender_chat.title
@@ -548,6 +613,10 @@ async def translate_callback(update: Update, context: CallbackContext):
         )
         if author_id:
             await db.record_message(chat_id, sent_msg.message_id, author_id)
+        if author_name and author_id:
+            await db.link_translation(
+                chat_id, sent_msg.message_id, message_id, author_id, author_name
+            )
         return
 
     # Load original text to translate
@@ -565,6 +634,31 @@ async def translate_callback(update: Update, context: CallbackContext):
             show_alert=True,
         )
         return
+
+    typing_job = None
+    if update.effective_chat:
+        action_thread_id = thread_id
+        if update.effective_chat.is_forum and thread_id is None:
+            action_thread_id = 1
+
+        try:
+            await context.bot.send_chat_action(
+                chat_id=chat_id,
+                action=ChatAction.TYPING,
+                message_thread_id=action_thread_id,
+            )
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("Initial typing indicator failed: %s", e)
+
+        typing_job = context.job_queue.run_repeating(
+            _typing_indicator_job,
+            interval=4,
+            first=4,
+            data={
+                "chat_id": chat_id,
+                "message_thread_id": action_thread_id,
+            },
+        )
 
     try:
         prompt = f"Translate this message into {target_language}. Respond ONLY with the translated text, no additional commentary. Preserve any existing formatting and adapt it to Telegram HTML (use <b>, <i>, <a>, <code>, <pre>). Do not wrap the response in markdown code blocks:\n\n{original_text}"
@@ -595,13 +689,22 @@ async def translate_callback(update: Update, context: CallbackContext):
             )
             if author_id:
                 await db.record_message(chat_id, sent_msg.message_id, author_id)
+            if author_name and author_id:
+                await db.link_translation(
+                    chat_id, sent_msg.message_id, message_id, author_id, author_name
+                )
         else:
             await query.answer("Failed to generate translation.", show_alert=True)
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         logger.error(
-            f"Error during interactive translation callback to {target_language}: {e}"
+            "Error during interactive translation callback to %s: %s",
+            target_language,
+            e,
         )
         await query.answer(
             "An error occurred while generating the translation.", show_alert=True
         )
+    finally:
+        if typing_job:
+            typing_job.schedule_removal()
