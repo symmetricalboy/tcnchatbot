@@ -445,6 +445,61 @@ async def evaluate_reaction(update: Update, context: CallbackContext):
                 )
 
 
+async def _delete_message_job(context: CallbackContext):
+    """Job to automatically delete a message."""
+    chat_id = context.job.data.get("chat_id")
+    message_id = context.job.data.get("message_id")
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+
+async def enforce_cxp_topic(
+    update: Update, context: CallbackContext, main_group_id, cxp_topic_id
+) -> bool:
+    """Check if the command was used in the correct CXP topic, and if not, warn and delete."""
+    if (
+        not update.message
+        or not update.message.message_thread_id
+        or update.message.message_thread_id != cxp_topic_id
+    ):
+        if (
+            update.message
+            and main_group_id
+            and cxp_topic_id
+            and update.effective_chat.id == main_group_id
+        ):
+            try:
+                await update.message.delete()
+            except Exception:
+                pass
+
+            chat_id_str = str(main_group_id)
+            if chat_id_str.startswith("-100"):
+                chat_id_str = chat_id_str[4:]
+            topic_link = f"https://t.me/c/{chat_id_str}/{cxp_topic_id}"
+
+            thread_id = update.message.message_thread_id
+            if update.effective_chat.is_forum and thread_id is None:
+                thread_id = 1
+
+            msg = await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                message_thread_id=thread_id,
+                text=f"This command only works in the [CXP Command Center]({topic_link}) topic.",
+                parse_mode="Markdown",
+                disable_web_page_preview=True,
+            )
+            context.job_queue.run_once(
+                _delete_message_job,
+                60,
+                data={"chat_id": msg.chat_id, "message_id": msg.message_id},
+            )
+        return False
+    return True
+
+
 async def user_stats_cmd(update: Update, context: CallbackContext):
     """Handler for /level."""
     if not update.effective_user or not update.message:
@@ -460,11 +515,7 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
     cxp_topic_id = config.get("cxp_topic_id") if config else None
     main_group_id = config.get("main_group_id") if config else None
 
-    if (
-        not update.message
-        or not update.message.message_thread_id
-        or update.message.message_thread_id != cxp_topic_id
-    ):
+    if not await enforce_cxp_topic(update, context, main_group_id, cxp_topic_id):
         return
 
     try:
@@ -598,11 +649,7 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
     cxp_topic_id = config.get("cxp_topic_id") if config else None
     main_group_id = config.get("main_group_id") if config else None
 
-    if (
-        not update.message
-        or not update.message.message_thread_id
-        or update.message.message_thread_id != cxp_topic_id
-    ):
+    if not await enforce_cxp_topic(update, context, main_group_id, cxp_topic_id):
         return
 
     try:
@@ -1004,11 +1051,7 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
     if not main_group_id or update.effective_chat.id != main_group_id:
         return
 
-    if (
-        not update.message
-        or not update.message.message_thread_id
-        or update.message.message_thread_id != cxp_topic_id
-    ):
+    if not await enforce_cxp_topic(update, context, main_group_id, cxp_topic_id):
         return
 
     user_id = update.effective_user.id

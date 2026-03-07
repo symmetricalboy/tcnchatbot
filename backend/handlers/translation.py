@@ -112,6 +112,8 @@ async def _translate_message(
         return
 
     thread_id = update.message.message_thread_id
+    if thread_id is None and reply_target_msg:
+        thread_id = reply_target_msg.message_thread_id
     if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
         thread_id = 1
 
@@ -154,7 +156,24 @@ async def _translate_message(
             # In Telegram HTML, < and > must be escaped if they aren't part of tags.
             # We assume Gemini outputs valid HTML tags as requested.
             safe_name = html.escape(author_name)
-            final_message = f"{safe_name}:\n<blockquote>{translated_text}</blockquote>"
+
+            # Map languages to flags for the header
+            flag_map = {
+                "English": "🇺🇸 [EN]",
+                "Spanish": "🇲🇽 [ES]",
+                "French": "🇫🇷 [FR]",
+                "Portuguese": "🇵🇹 [PT]",
+                "Indonesian": "🇮🇩 [ID]",
+                "Persian": "🇮🇷 [FA]",
+                "Russian": "🇷🇺 [RU]",
+                "Ukrainian": "🇺🇦 [UK]",
+                "Turkish": "🇹🇷 [TR]",
+            }
+            lang_header = flag_map.get(target_language, f"[{target_language}]")
+
+            mention_link = f'<a href="tg://user?id={author_id}">{safe_name}</a>'
+
+            final_message = f"<b>{lang_header}</b>\n<blockquote>{mention_link}\n{translated_text}</blockquote>"
 
             send_kwargs = {
                 "chat_id": update.effective_chat.id,
@@ -244,6 +263,21 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
         return
 
     reply = update.message.reply_to_message
+
+    # Determine if it's a topic root message
+    is_topic_root = False
+    if reply and update.effective_chat and update.effective_chat.is_forum:
+        thread_id = update.message.message_thread_id
+        if thread_id is None:
+            thread_id = reply.message_thread_id
+        if (thread_id is None and reply.message_id == 1) or (
+            reply.message_id == thread_id
+        ):
+            is_topic_root = True
+
+    if is_topic_root or getattr(update.message, "is_automatic_forward", False):
+        reply = None
+
     if not reply or context.args:
         try:
             await update.message.delete()
@@ -251,6 +285,9 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
             pass
 
         thread_id = update.message.message_thread_id
+        if thread_id is None and update.message.reply_to_message:
+            thread_id = update.message.reply_to_message.message_thread_id
+
         if (
             update.effective_chat
             and update.effective_chat.is_forum
@@ -280,31 +317,12 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
     except Exception:
         pass
 
-    # Ensure valid message to translate
-    is_topic_root = False
-    if update.effective_chat and update.effective_chat.is_forum:
-        thread_id = update.message.message_thread_id
-        if (thread_id is None and reply.message_id == 1) or (
-            reply.message_id == thread_id
-        ):
-            is_topic_root = True
-
     thread_id = update.message.message_thread_id
+    if thread_id is None and reply:
+        thread_id = reply.message_thread_id
+
     if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
         thread_id = 1
-
-    if is_topic_root or getattr(update.message, "is_automatic_forward", False):
-        msg = await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            message_thread_id=thread_id,
-            text="Cannot translate this type of message.",
-        )
-        context.job_queue.run_once(
-            _delete_message_job,
-            60,
-            data={"chat_id": msg.chat_id, "message_id": msg.message_id},
-        )
-        return
 
     text_to_translate = reply.text or reply.caption or ""
     if not text_to_translate:
@@ -434,6 +452,9 @@ async def translate_callback(update: Update, context: CallbackContext):
         author_name = "User"
 
     thread_id = query.message.message_thread_id
+    if thread_id is None and target_msg:
+        thread_id = target_msg.message_thread_id
+
     if query.message.chat.is_forum and thread_id is None:
         thread_id = 1
 
@@ -443,9 +464,24 @@ async def translate_callback(update: Update, context: CallbackContext):
     import html
 
     safe_name = html.escape(author_name)
+    mention_link = f'<a href="tg://user?id={author_id}">{safe_name}</a>'
+
+    # Map languages to flags for the header
+    flag_map = {
+        "English": "🇺🇸 [EN]",
+        "Spanish": "🇲🇽 [ES]",
+        "French": "🇫🇷 [FR]",
+        "Portuguese": "🇵🇹 [PT]",
+        "Indonesian": "🇮🇩 [ID]",
+        "Persian": "🇮🇷 [FA]",
+        "Russian": "🇷🇺 [RU]",
+        "Ukrainian": "🇺🇦 [UK]",
+        "Turkish": "🇹🇷 [TR]",
+    }
+    lang_header = flag_map.get(target_language, f"[{target_language}]")
 
     if cached_text:
-        final_message = f"{safe_name}:\n<blockquote>{cached_text}</blockquote>"
+        final_message = f"<b>{lang_header}</b>\n<blockquote>{mention_link}\n{cached_text}</blockquote>"
         sent_msg = await context.bot.send_message(
             chat_id=chat_id,
             message_thread_id=thread_id,
@@ -492,7 +528,7 @@ async def translate_callback(update: Update, context: CallbackContext):
             # Cache the result
             await db.save_translation(chat_id, message_id, lang_code, translated_text)
 
-            final_message = f"{safe_name}:\n<blockquote>{translated_text}</blockquote>"
+            final_message = f"<b>{lang_header}</b>\n<blockquote>{mention_link}\n{translated_text}</blockquote>"
             sent_msg = await context.bot.send_message(
                 chat_id=chat_id,
                 message_thread_id=thread_id,
