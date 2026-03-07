@@ -62,15 +62,13 @@ async def _translate_message(
         thread_id = update.message.message_thread_id
         if thread_id is None:
             thread_id = reply_target_msg.message_thread_id
-        if thread_id is None:
-            thread_id = 1
 
-        if (thread_id == 1 and reply_target_msg.message_id == 1) or (
-            reply_target_msg.message_id == thread_id
+        if (thread_id is None and reply_target_msg.message_id == 1) or (
+            thread_id is not None and reply_target_msg.message_id == thread_id
         ):
             is_topic_root = True
 
-    if is_topic_root or getattr(update.message, "is_automatic_forward", False):
+    if is_topic_root:
         reply_target_msg = None
 
     author_name = command_user_name
@@ -138,8 +136,6 @@ async def _translate_message(
     thread_id = update.message.message_thread_id
     if thread_id is None and reply_target_msg:
         thread_id = reply_target_msg.message_thread_id
-    if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
-        thread_id = 1
 
     typing_job = None
     if update.effective_chat:
@@ -302,15 +298,13 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
         thread_id = update.message.message_thread_id
         if thread_id is None:
             thread_id = reply.message_thread_id
-        if thread_id is None:
-            thread_id = 1
 
-        if (thread_id == 1 and reply.message_id == 1) or (
-            reply.message_id == thread_id
+        if (thread_id is None and reply.message_id == 1) or (
+            thread_id is not None and reply.message_id == thread_id
         ):
             is_topic_root = True
 
-    if is_topic_root or getattr(update.message, "is_automatic_forward", False):
+    if is_topic_root:
         reply = None
 
     if not reply or context.args:
@@ -322,12 +316,6 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
         thread_id = update.message.message_thread_id
         if thread_id is None and update.message.reply_to_message:
             thread_id = update.message.reply_to_message.message_thread_id
-        if (
-            update.effective_chat
-            and update.effective_chat.is_forum
-            and thread_id is None
-        ):
-            thread_id = 1
 
         msg = await context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -505,9 +493,6 @@ async def translate_callback(update: Update, context: CallbackContext):
     thread_id = query.message.message_thread_id
     if thread_id is None and target_msg:
         thread_id = target_msg.message_thread_id
-
-    if query.message.chat.is_forum and thread_id is None:
-        thread_id = 1
 
     # Check cache first
     cached_text = await db.get_translation(chat_id, message_id, lang_code)
