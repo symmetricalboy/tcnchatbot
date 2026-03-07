@@ -480,7 +480,7 @@ async def enforce_cxp_topic(
 
             msg = await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                message_thread_id=thread_id,
+                message_thread_id=update.message.message_thread_id,
                 text=f"This command only works in the [CXP Command Center]({topic_link}) topic.",
                 parse_mode="Markdown",
                 disable_web_page_preview=True,
@@ -747,7 +747,12 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
     except Exception:
         pass
 
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        message_thread_id=update.message.message_thread_id,
+        text=msg,
+        parse_mode="Markdown",
+    )
 
 
 async def commands_cmd(update: Update, context: CallbackContext):
@@ -770,7 +775,12 @@ async def commands_cmd(update: Update, context: CallbackContext):
     except Exception:
         pass
 
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        message_thread_id=update.message.message_thread_id,
+        text=msg,
+        parse_mode="Markdown",
+    )
 
 
 async def get_id_cmd(update: Update, context: CallbackContext):
