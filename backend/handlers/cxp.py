@@ -4,6 +4,7 @@ import random
 from datetime import datetime
 from telegram import Update
 from telegram.ext import CallbackContext
+import httpx
 
 from database import db
 from handlers.common import resolve_username, is_user_admin
@@ -207,8 +208,83 @@ def calculate_level(cxp: int) -> int:
     return math.floor((1 + math.sqrt(1 + 4 * safe_cxp / 250)) / 2)
 
 
+def _get_member_tag_string(level: int) -> str:
+    if level >= 60:
+        return "Zero-Day Broker"
+    elif level >= 50:
+        return "Whale Hunter"
+    elif level >= 40:
+        return "Clean Splicer"
+    elif level >= 30:
+        return "Ledger Forger"
+    elif level >= 20:
+        return "Dirty Phreak"
+    elif level >= 10:
+        return "True Operator"
+    elif level >= 5:
+        return "Hash Cracker"
+    elif level >= 1:
+        return "Script Kiddie"
+    return ""
+
+
+async def _update_member_tag(bot, user_id: int, new_level: int):
+    """Automatically assign a group member tag based on new CXP level."""
+    config = await db.get_config()
+    if not config:
+        return
+
+    main_group_id = config.get("main_group_id")
+    if not main_group_id:
+        return
+
+    tag = _get_member_tag_string(new_level)
+
+    if not tag:
+        return
+
+    try:
+        url = f"{bot.base_url}/setChatMemberTag"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                url, json={"chat_id": main_group_id, "user_id": user_id, "tag": tag}
+            )
+            data = resp.json()
+            if not data.get("ok"):
+                logger.warning("Failed to set member tag for %s: %s", user_id, data)
+            else:
+                logger.info("Successfully set member tag '%s' for %s", tag, user_id)
+    except Exception as e:
+        logger.error("Error setting member tag for %s: %s", user_id, e)
+
+
+async def backfill_member_tags(bot):
+    """Temporary function to backfill member tags for all existing users on startup."""
+    logger.info("Starting CXP member tag backfill...")
+    if not db.pool:
+        logger.warning("DB pool not initialized, skipping backfill.")
+        return
+
+    async with db.pool.acquire() as conn:
+        users = await conn.fetch("SELECT user_id, cxp FROM users")
+
+    count = 0
+    for row in users:
+        user_id = row["user_id"]
+        cxp = row.get("cxp", 0)
+        level = calculate_level(cxp)
+        if level >= 1:
+            await _update_member_tag(bot, user_id, level)
+            count += 1
+
+    logger.info("Finished CXP member tag backfill for %s users.", count)
+
+
 async def _announce_level_up(context: CallbackContext, user, new_level: int):
     """Announce level up in the dedicated CXP topic if configured."""
+    # Update the member tag asynchronously to prevent blocking the announcement
+    context.application.create_task(_update_member_tag(context.bot, user.id, new_level))
+
     config = await db.get_config()
     if not config:
         return
@@ -621,10 +697,13 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
         except Exception:
             target_name = f"User/Channel {target_id}"
 
+    level_title = _get_member_tag_string(level)
+    level_display = f"{level} ({level_title})" if level_title else str(level)
+
     msg = (
         f"📊 **Statistics for {target_name}**\n\n"
         f"🏆 **Rank:** {rank_display}\n"
-        f"🔰 **Level:** {level}\n"
+        f"🔰 **Level:** {level_display}\n"
         f"✨ **CXP:** {cxp:,} / {next_level_cxp:,}"
     )
 
@@ -740,6 +819,15 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
         "• **Reactions**: Earn or lose CXP when others react to your messages.\n"
         "  Positive emojis give `+50 CXP`, negative emojis give `-50 CXP`.\n"
         "• **Influence**: Higher level users multiply the CXP of their reactions! Your vote carries more weight as you rank up.\n\n"
+        "**Level Titles:**\n"
+        "• **Lvl 1-4:** Script Kiddie\n"
+        "• **Lvl 5-9:** Hash Cracker\n"
+        "• **Lvl 10-19:** True Operator\n"
+        "• **Lvl 20-29:** Dirty Phreak\n"
+        "• **Lvl 30-39:** Ledger Forger\n"
+        "• **Lvl 40-49:** Clean Splicer\n"
+        "• **Lvl 50-59:** Whale Hunter\n"
+        "• **Lvl 60+:** Zero-Day Broker\n\n"
         "To view the specific commands and how to use them, type `/commands`."
     )
     try:
@@ -957,6 +1045,11 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     new_cxp = new_data.get("cxp", 0)
     new_level = calculate_level(new_cxp)
 
+    if new_level != old_level:
+        context.application.create_task(
+            _update_member_tag(context.bot, target_id, new_level)
+        )
+
     action = "granted" if delta_cxp > 0 else "removed"
     msg = f"✅ Successfully {action} {abs(delta_cxp):,} CXP to {target_name}. Their new total is {new_cxp:,} CXP (Level {new_level})."
     await update.message.reply_text(msg)
@@ -1144,10 +1237,27 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
 
     STEAL_AMOUNT = random.randint(25, 100)
 
+    target_old_level = calculate_level(target_data.get("cxp", 0))
+    user_old_level = calculate_level(user_data.get("cxp", 0))
+
     # Deduct from target
     await db.update_user_cxp(target_id, -STEAL_AMOUNT)
+    target_new_data = await db.get_user(target_id)
+    target_new_level = calculate_level(target_new_data.get("cxp", 0))
+    if target_new_level != target_old_level:
+        context.application.create_task(
+            _update_member_tag(context.bot, target_id, target_new_level)
+        )
+
     # Add to sender
     await db.update_user_cxp(user_id, STEAL_AMOUNT)
+    user_new_data = await db.get_user(user_id)
+    user_new_level = calculate_level(user_new_data.get("cxp", 0))
+    if user_new_level != user_old_level:
+        context.application.create_task(
+            _update_member_tag(context.bot, user_id, user_new_level)
+        )
+
     # Update cooldown
     await db.update_user_steal_time(user_id)
 
