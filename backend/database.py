@@ -172,7 +172,8 @@ class Database:
         username = username.lstrip("@")
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
-                "SELECT * FROM users WHERE username ILIKE $1", username
+                "SELECT * FROM users WHERE username ILIKE $1 OR display_name ILIKE $1",
+                username,
             )
 
     async def get_random_user(self, exclude_user_id: int):
