@@ -952,7 +952,7 @@ async def set_admin_cmd(update: Update, context: CallbackContext):
 
 
 async def steal_cxp_cmd(update: Update, context: CallbackContext):
-    """Member command: /steal. Steal 1-100 CXP from a random user with 1-hour cooldown."""
+    """Member command: /steal. Steal 25-100 CXP from a random user with 1-hour cooldown."""
     if not update.effective_user or not update.message:
         return
 
@@ -1032,9 +1032,9 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
     # 3. Perform Steal
     if random.random() < 0.10:
         if random.random() < 0.50:
-            msg = f"Jammer detected! {user_name} failed to steal!"
+            msg = f"📡 Jammer detected! {user_name} failed to steal!"
         else:
-            msg = f"Shield detected! {user_name} failed to steal!"
+            msg = f"🛡️ Shield detected! {user_name} failed to steal!"
 
         await db.update_user_steal_time(user_id)
 
@@ -1057,6 +1057,6 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
     await context.bot.send_message(
         chat_id=main_group_id,
         message_thread_id=cxp_topic_id,
-        text=f"**{user_name}** stole `{STEAL_AMOUNT}` CXP from **{target_name}**!",
+        text=f"🎯 **{user_name}** stole `{STEAL_AMOUNT}` CXP from **{target_name}**!",
         parse_mode="Markdown",
     )
