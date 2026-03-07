@@ -4,6 +4,7 @@ import random
 from datetime import datetime
 from telegram import Update
 from telegram.ext import CallbackContext
+import httpx
 
 from database import db
 from handlers.common import resolve_username, is_user_admin
@@ -207,8 +208,79 @@ def calculate_level(cxp: int) -> int:
     return math.floor((1 + math.sqrt(1 + 4 * safe_cxp / 250)) / 2)
 
 
+async def _update_member_tag(bot, user_id: int, new_level: int):
+    """Automatically assign a group member tag based on new CXP level."""
+    config = await db.get_config()
+    if not config:
+        return
+
+    main_group_id = config.get("main_group_id")
+    if not main_group_id:
+        return
+
+    tag = ""
+    if new_level >= 60:
+        tag = "Zero-Day Broker"
+    elif new_level >= 50:
+        tag = "Whale Hunter"
+    elif new_level >= 40:
+        tag = "Clean Splicer"
+    elif new_level >= 30:
+        tag = "Ledger Forger"
+    elif new_level >= 20:
+        tag = "Dirty Phreak"
+    elif new_level >= 10:
+        tag = "True Operator"
+    elif new_level >= 5:
+        tag = "Hash Cracker"
+    elif new_level >= 1:
+        tag = "Script Kiddie"
+
+    if not tag:
+        return
+
+    try:
+        url = f"{bot.base_url}/setChatMemberTag"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                url, json={"chat_id": main_group_id, "user_id": user_id, "tag": tag}
+            )
+            data = resp.json()
+            if not data.get("ok"):
+                logger.warning("Failed to set member tag for %s: %s", user_id, data)
+            else:
+                logger.info("Successfully set member tag '%s' for %s", tag, user_id)
+    except Exception as e:
+        logger.error("Error setting member tag for %s: %s", user_id, e)
+
+
+async def backfill_member_tags(bot):
+    """Temporary function to backfill member tags for all existing users on startup."""
+    logger.info("Starting CXP member tag backfill...")
+    if not db.pool:
+        logger.warning("DB pool not initialized, skipping backfill.")
+        return
+
+    async with db.pool.acquire() as conn:
+        users = await conn.fetch("SELECT user_id, cxp FROM users")
+
+    count = 0
+    for row in users:
+        user_id = row["user_id"]
+        cxp = row.get("cxp", 0)
+        level = calculate_level(cxp)
+        if level >= 1:
+            await _update_member_tag(bot, user_id, level)
+            count += 1
+
+    logger.info("Finished CXP member tag backfill for %s users.", count)
+
+
 async def _announce_level_up(context: CallbackContext, user, new_level: int):
     """Announce level up in the dedicated CXP topic if configured."""
+    # Update the member tag asynchronously to prevent blocking the announcement
+    context.application.create_task(_update_member_tag(context.bot, user.id, new_level))
+
     config = await db.get_config()
     if not config:
         return
