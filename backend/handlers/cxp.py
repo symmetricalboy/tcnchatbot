@@ -1029,6 +1029,11 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     new_cxp = new_data.get("cxp", 0)
     new_level = calculate_level(new_cxp)
 
+    if new_level > old_level:
+        context.application.create_task(
+            _update_member_tag(context.bot, target_id, new_level)
+        )
+
     action = "granted" if delta_cxp > 0 else "removed"
     msg = f"✅ Successfully {action} {abs(delta_cxp):,} CXP to {target_name}. Their new total is {new_cxp:,} CXP (Level {new_level})."
     await update.message.reply_text(msg)
