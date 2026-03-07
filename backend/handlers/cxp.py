@@ -742,6 +742,11 @@ async def cxp_help_cmd(update: Update, context: CallbackContext):
         "• **Influence**: Higher level users multiply the CXP of their reactions! Your vote carries more weight as you rank up.\n\n"
         "To view the specific commands and how to use them, type `/commands`."
     )
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
@@ -760,6 +765,11 @@ async def commands_cmd(update: Update, context: CallbackContext):
         "`/ru` (Russian), `/uk` (Ukrainian), `/tr` (Turkish).\n"
         "You can also reply to a message with `/translate` for an interactive translation menu."
     )
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 

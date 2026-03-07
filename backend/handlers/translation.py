@@ -79,7 +79,19 @@ async def _translate_message(
             should_reply_to_target = True
             target_msg_id = reply_target_msg.message_id
     elif reply_target_msg:
-        text_to_translate = reply_target_msg.text or reply_target_msg.caption or ""
+        text_to_translate = (
+            getattr(
+                reply_target_msg,
+                "text_html_urled",
+                getattr(reply_target_msg, "text_html", reply_target_msg.text),
+            )
+            or getattr(
+                reply_target_msg,
+                "caption_html_urled",
+                getattr(reply_target_msg, "caption_html", reply_target_msg.caption),
+            )
+            or ""
+        )
         should_reply_to_target = True
         target_msg_id = reply_target_msg.message_id
         target_user = reply_target_msg.from_user
@@ -324,7 +336,13 @@ async def translate_interactive_cmd(update: Update, context: CallbackContext):
     if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
         thread_id = 1
 
-    text_to_translate = reply.text or reply.caption or ""
+    text_to_translate = (
+        getattr(reply, "text_html_urled", getattr(reply, "text_html", reply.text))
+        or getattr(
+            reply, "caption_html_urled", getattr(reply, "caption_html", reply.caption)
+        )
+        or ""
+    )
     if not text_to_translate:
         msg = await context.bot.send_message(
             chat_id=update.effective_chat.id,
