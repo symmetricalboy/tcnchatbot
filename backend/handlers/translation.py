@@ -270,6 +270,18 @@ async def _translate_message(
             await db.save_original_translation_text(
                 update.effective_chat.id, root_msg_id, text_to_translate
             )
+
+            # Auto-delete the newly generated translation message after 60 seconds
+            # ONLY if it was generated as a reply (not a permanent inline stand-alone).
+            if should_reply_to_target:
+                context.job_queue.run_once(
+                    _delete_message_job,
+                    60,
+                    data={
+                        "chat_id": sent_msg.chat_id,
+                        "message_id": sent_msg.message_id,
+                    },
+                )
         else:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -705,6 +717,14 @@ async def translate_callback(update: Update, context: CallbackContext):
 
             # Unconditionally save the pure original string under the root ID
             await db.save_original_translation_text(chat_id, root_msg_id, original_text)
+
+            # Auto-delete the newly generated translation message after 60 seconds
+            # since interactive callbacks are always executed as replies.
+            context.job_queue.run_once(
+                _delete_message_job,
+                60,
+                data={"chat_id": sent_msg.chat_id, "message_id": sent_msg.message_id},
+            )
         else:
             await query.answer("Failed to generate translation.", show_alert=True)
 
