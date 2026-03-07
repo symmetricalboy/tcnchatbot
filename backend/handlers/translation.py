@@ -273,7 +273,7 @@ async def _translate_message(
 
             # Auto-delete the newly generated translation message after 60 seconds
             # ONLY if it was generated as a reply (not a permanent inline stand-alone).
-            if should_reply_to_target:
+            if should_reply_to_target and not context.args:
                 context.job_queue.run_once(
                     _delete_message_job,
                     60,
