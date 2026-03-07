@@ -1,6 +1,7 @@
 import logging
 import math
 import random
+import asyncio
 from datetime import datetime
 from telegram import Update
 from telegram.ext import CallbackContext
@@ -243,19 +244,52 @@ async def _update_member_tag(bot, user_id: int, new_level: int):
     if not tag:
         return
 
-    try:
-        url = f"{bot.base_url}/setChatMemberTag"
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                url, data={"chat_id": main_group_id, "user_id": user_id, "tag": tag}
-            )
-            data = resp.json()
-            if not data.get("ok"):
+    url = f"{bot.base_url}/setChatMemberTag"
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    url, data={"chat_id": main_group_id, "user_id": user_id, "tag": tag}
+                )
+                data = resp.json()
+
+                if data.get("ok"):
+                    logger.info("Successfully set member tag '%s' for %s", tag, user_id)
+                    break
+
+                # Handle Telegram Errors
+                error_code = data.get("error_code")
+                desc = data.get("description", "").lower()
+
+                if error_code == 429:
+                    retry_after = data.get("parameters", {}).get("retry_after", 5)
+                    logger.warning(
+                        "Rate limited parsing tag for %s. Sleeping %s seconds...",
+                        user_id,
+                        retry_after,
+                    )
+                    await asyncio.sleep(retry_after)
+                    continue
+
+                # Benign skips (people who left, deleted their account, invalid IDs, or group creators)
+                skip_descs = [
+                    "user_not_participant",
+                    "user is deactivated",
+                    "chat_creator_required",
+                    "invalid user_id",
+                ]
+                if error_code in [400, 403] and any(s in desc for s in skip_descs):
+                    logger.debug("Skipping tag for %s: %s", user_id, desc)
+                    break
+
                 logger.warning("Failed to set member tag for %s: %s", user_id, data)
-            else:
-                logger.info("Successfully set member tag '%s' for %s", tag, user_id)
-    except Exception as e:
-        logger.error("Error setting member tag for %s: %s", user_id, e)
+                break
+
+        except Exception as e:
+            logger.error("Error setting member tag for %s: %s", user_id, e)
+            break
 
 
 async def backfill_member_tags(bot):
@@ -276,6 +310,7 @@ async def backfill_member_tags(bot):
         if level >= 1:
             await _update_member_tag(bot, user_id, level)
             count += 1
+            await asyncio.sleep(0.1)  # Add slight delay to prevent massive 429 waves
 
     logger.info("Finished CXP member tag backfill for %s users.", count)
 
