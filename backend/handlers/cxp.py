@@ -1029,7 +1029,7 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
     new_cxp = new_data.get("cxp", 0)
     new_level = calculate_level(new_cxp)
 
-    if new_level > old_level:
+    if new_level != old_level:
         context.application.create_task(
             _update_member_tag(context.bot, target_id, new_level)
         )
@@ -1221,10 +1221,27 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
 
     STEAL_AMOUNT = random.randint(25, 100)
 
+    target_old_level = calculate_level(target_data.get("cxp", 0))
+    user_old_level = calculate_level(user_data.get("cxp", 0))
+
     # Deduct from target
     await db.update_user_cxp(target_id, -STEAL_AMOUNT)
+    target_new_data = await db.get_user(target_id)
+    target_new_level = calculate_level(target_new_data.get("cxp", 0))
+    if target_new_level != target_old_level:
+        context.application.create_task(
+            _update_member_tag(context.bot, target_id, target_new_level)
+        )
+
     # Add to sender
     await db.update_user_cxp(user_id, STEAL_AMOUNT)
+    user_new_data = await db.get_user(user_id)
+    user_new_level = calculate_level(user_new_data.get("cxp", 0))
+    if user_new_level != user_old_level:
+        context.application.create_task(
+            _update_member_tag(context.bot, user_id, user_new_level)
+        )
+
     # Update cooldown
     await db.update_user_steal_time(user_id)
 
