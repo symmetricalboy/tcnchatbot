@@ -458,6 +458,7 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
 
     config = await db.get_config()
     cxp_topic_id = config.get("cxp_topic_id") if config else None
+    main_group_id = config.get("main_group_id") if config else None
 
     if (
         not update.message
@@ -465,6 +466,11 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
         or update.message.message_thread_id != cxp_topic_id
     ):
         return
+
+    try:
+        await update.message.delete()
+    except Exception as e:
+        logger.warning(f"Failed to delete /level message: {e}")
 
     if getattr(update.effective_user, "is_bot", True) and update.message.sender_chat:
         target_id = update.message.sender_chat.id
@@ -521,14 +527,22 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
             target_id = resolved_id
             target_name = resolved_name
         else:
-            await update.message.reply_text(
-                "Could not resolve a target user from the arguments provided via Telegram. Please ensure the @username is correct."
-            )
+            if main_group_id and cxp_topic_id:
+                await context.bot.send_message(
+                    chat_id=main_group_id,
+                    message_thread_id=cxp_topic_id,
+                    text="Could not resolve a target user from the arguments provided via Telegram. Please ensure the @username is correct.",
+                )
             return
 
     user_data = await db.get_user(target_id)
     if not user_data:
-        await update.message.reply_text("No stats found for that user.")
+        if main_group_id and cxp_topic_id:
+            await context.bot.send_message(
+                chat_id=main_group_id,
+                message_thread_id=cxp_topic_id,
+                text="No stats found for that user.",
+            )
         return
 
     cxp = user_data.get("cxp", 0)
@@ -537,7 +551,6 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
 
     # If not manually set as admin in DB, fallback to Telegram Group check
     if not is_admin and config:
-        main_group_id = config.get("main_group_id")
         if main_group_id:
             try:
                 member = await context.bot.get_chat_member(main_group_id, target_id)
@@ -570,7 +583,13 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
         f"✨ **CXP:** {cxp:,} / {next_level_cxp:,}"
     )
 
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    if main_group_id and cxp_topic_id:
+        await context.bot.send_message(
+            chat_id=main_group_id,
+            message_thread_id=cxp_topic_id,
+            text=msg,
+            parse_mode="Markdown",
+        )
 
 
 async def leaderboard_cmd(update: Update, context: CallbackContext):
@@ -586,10 +605,20 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
     ):
         return
 
+    try:
+        await update.message.delete()
+    except Exception as e:
+        logger.warning(f"Failed to delete /leaderboard message: {e}")
+
     # Fetch a wider net in case many are admins
     top_candidates = await db.get_leaderboard(limit=50)
     if not top_candidates:
-        await update.message.reply_text("The leaderboard is currently empty!")
+        if main_group_id and cxp_topic_id:
+            await context.bot.send_message(
+                chat_id=main_group_id,
+                message_thread_id=cxp_topic_id,
+                text="The leaderboard is currently empty!",
+            )
         return
 
     actual_top_10 = []
@@ -616,7 +645,12 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
             actual_top_10.append(row)
 
     if not actual_top_10:
-        await update.message.reply_text("No non-admin users found for the leaderboard.")
+        if main_group_id and cxp_topic_id:
+            await context.bot.send_message(
+                chat_id=main_group_id,
+                message_thread_id=cxp_topic_id,
+                text="No non-admin users found for the leaderboard.",
+            )
         return
 
     msg = "🏆 **Global Leaderboard (Top 10)** 🏆\n\n"
@@ -642,7 +676,13 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
 
         msg += f"{medal} **{name}** — Level {level} ({cxp:,} CXP)\n"
 
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    if main_group_id and cxp_topic_id:
+        await context.bot.send_message(
+            chat_id=main_group_id,
+            message_thread_id=cxp_topic_id,
+            text=msg,
+            parse_mode="Markdown",
+        )
 
 
 async def cxp_help_cmd(update: Update, context: CallbackContext):
@@ -988,7 +1028,7 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
         now = datetime.now()
         # last_steal is likely a datetime object from asyncpg
         time_diff = now - last_steal
-        remaining_seconds = 5 - time_diff.total_seconds()
+        remaining_seconds = 3600 - time_diff.total_seconds()
         if remaining_seconds > 0:
             minutes = int(remaining_seconds // 60)
             seconds = int(remaining_seconds % 60)
