@@ -6,6 +6,7 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import CallbackContext
 import httpx
+from telegram.helpers import escape_markdown
 
 from database import db
 from handlers.common import resolve_username, is_user_admin
@@ -292,27 +293,27 @@ async def _update_member_tag(bot, user_id: int, new_level: int):
             break
 
 
-async def backfill_member_tags(bot):
-    """Temporary function to backfill member tags for all existing users on startup."""
-    logger.info("Starting CXP member tag backfill...")
-    if not db.pool:
-        logger.warning("DB pool not initialized, skipping backfill.")
-        return
+# async def backfill_member_tags(bot):
+#     """Temporary function to backfill member tags for all existing users on startup."""
+#     logger.info("Starting CXP member tag backfill...")
+#     if not db.pool:
+#         logger.warning("DB pool not initialized, skipping backfill.")
+#         return
 
-    async with db.pool.acquire() as conn:
-        users = await conn.fetch("SELECT user_id, cxp FROM users")
+#     async with db.pool.acquire() as conn:
+#         users = await conn.fetch("SELECT user_id, cxp FROM users")
 
-    count = 0
-    for row in users:
-        user_id = row["user_id"]
-        cxp = row.get("cxp", 0)
-        level = calculate_level(cxp)
-        if level >= 1:
-            await _update_member_tag(bot, user_id, level)
-            count += 1
-            await asyncio.sleep(0.1)  # Add slight delay to prevent massive 429 waves
+#     count = 0
+#     for row in users:
+#         user_id = row["user_id"]
+#         cxp = row.get("cxp", 0)
+#         level = calculate_level(cxp)
+#         if level >= 1:
+#             await _update_member_tag(bot, user_id, level)
+#             count += 1
+#             await asyncio.sleep(0.1)  # Add slight delay to prevent massive 429 waves
 
-    logger.info("Finished CXP member tag backfill for %s users.", count)
+#     logger.info("Finished CXP member tag backfill for %s users.", count)
 
 
 async def _announce_level_up(context: CallbackContext, user, new_level: int):
@@ -735,8 +736,10 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
     level_title = _get_member_tag_string(level)
     level_display = f"{level} ({level_title})" if level_title else str(level)
 
+    safe_target_name = escape_markdown(target_name, version=1)
+
     msg = (
-        f"📊 **Statistics for {target_name}**\n\n"
+        f"📊 **Statistics for {safe_target_name}**\n\n"
         f"🏆 **Rank:** {rank_display}\n"
         f"🔰 **Level:** {level_display}\n"
         f"✨ **CXP:** {cxp:,} / {next_level_cxp:,}"
@@ -829,7 +832,8 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
                 except Exception:
                     name = f"User {u_id}"
 
-        msg += f"{medal} **{name}** — Level {level} ({cxp:,} CXP)\n"
+        safe_name = escape_markdown(name, version=1)
+        msg += f"{medal} **{safe_name}** — Level {level} ({cxp:,} CXP)\n"
 
     if main_group_id and cxp_topic_id:
         await context.bot.send_message(
@@ -944,8 +948,9 @@ async def get_id_cmd(update: Update, context: CallbackContext):
             full_name = target_user.first_name + (
                 f" {target_user.last_name}" if target_user.last_name else ""
             )
+            safe_full_name = escape_markdown(full_name, version=1)
             await update.message.reply_text(
-                f"Reply Resolution Success!\nName: {full_name}\nID: `{target_user.id}`",
+                f"Reply Resolution Success!\nName: {safe_full_name}\nID: `{target_user.id}`",
                 parse_mode="Markdown",
             )
             return
@@ -962,8 +967,9 @@ async def get_id_cmd(update: Update, context: CallbackContext):
     resolved_id, resolved_name = await resolve_username(arg_str, update, context)
 
     if resolved_id:
+        safe_resolved_name = escape_markdown(resolved_name, version=1)
         await update.message.reply_text(
-            f"Resolution Success!\nName: {resolved_name}\nID: `{resolved_id}`",
+            f"Resolution Success!\nName: {safe_resolved_name}\nID: `{resolved_id}`",
             parse_mode="Markdown",
         )
     else:
@@ -1228,10 +1234,11 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
         if remaining_seconds > 0:
             minutes = int(remaining_seconds // 60)
             seconds = int(remaining_seconds % 60)
+            safe_user_name = escape_markdown(user_name, version=1)
             await context.bot.send_message(
                 chat_id=main_group_id,
                 message_thread_id=cxp_topic_id,
-                text=f"⏳ {user_name}, you are on cooldown! Please wait `{minutes}m {seconds}s` before trying again.",
+                text=f"⏳ {safe_user_name}, you are on cooldown! Please wait `{minutes}m {seconds}s` before trying again.",
                 parse_mode="Markdown",
             )
             return
@@ -1307,9 +1314,11 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
     # Update cooldown
     await db.update_user_steal_time(user_id)
 
+    safe_user_name = escape_markdown(user_name, version=1)
+    safe_target_name = escape_markdown(target_name, version=1)
     await context.bot.send_message(
         chat_id=main_group_id,
         message_thread_id=cxp_topic_id,
-        text=f"🎯 **{user_name}** stole `{STEAL_AMOUNT}` CXP from **{target_name}**!",
+        text=f"🎯 **{safe_user_name}** stole `{STEAL_AMOUNT}` CXP from **{safe_target_name}**!",
         parse_mode="Markdown",
     )
