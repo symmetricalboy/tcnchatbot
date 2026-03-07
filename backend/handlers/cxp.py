@@ -671,7 +671,7 @@ async def commands_cmd(update: Update, context: CallbackContext):
         "**CXP Commands (Use in the CXP topic):**\n"
         "• `/level` — View your own stats and rank. Use `/level @username` to check someone else.\n"
         "• `/leaderboard` — View the top 10 CXP leaders (Admins excluded).\n"
-        "• `/steal` — Steal 1-100 CXP from a random user! 1-hour cooldown.\n\n"
+        "• `/steal` — Steal 25-100 CXP from a random user! 1-hour cooldown.\n\n"
         "**Translation Commands:**\n"
         "Start a message with or reply to a message with one of the following commands to translate it:\n"
         "`/en` (English), `/es` (Spanish), `/fr` (French),\n"
@@ -972,6 +972,14 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
         return
 
     user_id = update.effective_user.id
+    user_name = update.effective_user.first_name + (
+        f" {update.effective_user.last_name}" if update.effective_user.last_name else ""
+    )
+
+    try:
+        await update.message.delete()
+    except Exception as e:
+        logger.warning(f"Failed to delete /steal message: {e}")
 
     # 1. Check Cooldown
     user_data = await db.get_user(user_id)
@@ -980,12 +988,14 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
         now = datetime.now()
         # last_steal is likely a datetime object from asyncpg
         time_diff = now - last_steal
-        remaining_seconds = 3600 - time_diff.total_seconds()
+        remaining_seconds = 5 - time_diff.total_seconds()
         if remaining_seconds > 0:
             minutes = int(remaining_seconds // 60)
             seconds = int(remaining_seconds % 60)
-            await update.message.reply_text(
-                f"⏳ You are on cooldown! Please wait `{minutes}m {seconds}s` before trying again.",
+            await context.bot.send_message(
+                chat_id=main_group_id,
+                message_thread_id=cxp_topic_id,
+                text=f"⏳ {user_name}, you are on cooldown! Please wait `{minutes}m {seconds}s` before trying again.",
                 parse_mode="Markdown",
             )
             return
@@ -993,7 +1003,11 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
     # 2. Resolve random target
     target_data = await db.get_random_user(user_id)
     if not target_data:
-        await update.message.reply_text("There is no one available to steal from!")
+        await context.bot.send_message(
+            chat_id=main_group_id,
+            message_thread_id=cxp_topic_id,
+            text="There is no one available to steal from!",
+        )
         return
 
     target_id = target_data.get("user_id")
@@ -1006,12 +1020,32 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
         else:
             try:
                 chat = await context.bot.get_chat(target_id)
-                target_name = chat.title or chat.first_name or f"User {target_id}"
+                target_name = (
+                    chat.first_name
+                    + (f" {chat.last_name}" if getattr(chat, "last_name", None) else "")
+                    if chat.first_name
+                    else chat.title or f"User {target_id}"
+                )
             except Exception:
                 target_name = f"User {target_id}"
 
     # 3. Perform Steal
-    STEAL_AMOUNT = random.randint(1, 100)
+    if random.random() < 0.10:
+        if random.random() < 0.50:
+            msg = f"Jammer detected! {user_name} failed to steal!"
+        else:
+            msg = f"Shield detected! {user_name} failed to steal!"
+
+        await db.update_user_steal_time(user_id)
+
+        await context.bot.send_message(
+            chat_id=main_group_id,
+            message_thread_id=cxp_topic_id,
+            text=msg,
+        )
+        return
+
+    STEAL_AMOUNT = random.randint(25, 100)
 
     # Deduct from target
     await db.update_user_cxp(target_id, -STEAL_AMOUNT)
@@ -1020,7 +1054,9 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
     # Update cooldown
     await db.update_user_steal_time(user_id)
 
-    await update.message.reply_text(
-        f"🎯 **Success!** You stole `{STEAL_AMOUNT}` CXP from **{target_name}**!",
+    await context.bot.send_message(
+        chat_id=main_group_id,
+        message_thread_id=cxp_topic_id,
+        text=f"**{user_name}** stole `{STEAL_AMOUNT}` CXP from **{target_name}**!",
         parse_mode="Markdown",
     )
