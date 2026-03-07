@@ -99,8 +99,15 @@ async def _translate_message(
         )
         should_reply_to_target = True
         target_msg_id = reply_target_msg.message_id
-        target_user = reply_target_msg.from_user
-        if target_user:
+        if reply_target_msg.sender_chat:
+            author_id = reply_target_msg.sender_chat.id
+            author_name = (
+                reply_target_msg.sender_chat.title
+                or reply_target_msg.sender_chat.username
+                or f"Channel {author_id}"
+            )
+        elif reply_target_msg.from_user:
+            target_user = reply_target_msg.from_user
             author_name = target_user.first_name + (
                 f" {target_user.last_name}"
                 if getattr(target_user, "last_name", None)
@@ -465,13 +472,24 @@ async def translate_callback(update: Update, context: CallbackContext):
 
     # Extract original author info for the header
     target_msg = query.message.reply_to_message
-    if target_msg and target_msg.from_user:
-        author_id = target_msg.from_user.id
-        author_name = target_msg.from_user.first_name + (
-            f" {target_msg.from_user.last_name}"
-            if target_msg.from_user.last_name
-            else ""
-        )
+    if target_msg:
+        if target_msg.sender_chat:
+            author_id = target_msg.sender_chat.id
+            author_name = (
+                target_msg.sender_chat.title
+                or target_msg.sender_chat.username
+                or f"Channel {author_id}"
+            )
+        elif target_msg.from_user:
+            author_id = target_msg.from_user.id
+            author_name = target_msg.from_user.first_name + (
+                f" {target_msg.from_user.last_name}"
+                if target_msg.from_user.last_name
+                else ""
+            )
+        else:
+            author_id = 0
+            author_name = "User"
     else:
         author_id = 0
         author_name = "User"
