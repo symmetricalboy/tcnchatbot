@@ -459,17 +459,15 @@ async def enforce_cxp_topic(
     update: Update, context: CallbackContext, main_group_id, cxp_topic_id
 ) -> bool:
     """Check if the command was used in the correct CXP topic, and if not, warn and delete."""
-    if (
-        not update.message
-        or not update.message.message_thread_id
-        or update.message.message_thread_id != cxp_topic_id
-    ):
-        if (
-            update.message
-            and main_group_id
-            and cxp_topic_id
-            and update.effective_chat.id == main_group_id
-        ):
+    if not update.message:
+        return True
+
+    thread_id = update.message.message_thread_id
+    if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
+        thread_id = 1
+
+    if thread_id != cxp_topic_id:
+        if main_group_id and cxp_topic_id and update.effective_chat.id == main_group_id:
             try:
                 await update.message.delete()
             except Exception:
@@ -479,10 +477,6 @@ async def enforce_cxp_topic(
             if chat_id_str.startswith("-100"):
                 chat_id_str = chat_id_str[4:]
             topic_link = f"https://t.me/c/{chat_id_str}/{cxp_topic_id}"
-
-            thread_id = update.message.message_thread_id
-            if update.effective_chat.is_forum and thread_id is None:
-                thread_id = 1
 
             msg = await context.bot.send_message(
                 chat_id=update.effective_chat.id,
