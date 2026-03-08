@@ -593,7 +593,7 @@ async def enforce_cxp_topic(
             msg = await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 message_thread_id=update.message.message_thread_id,
-                text=f"This command only works in the [CXP Command Center]({topic_link}) topic.",
+                text=f"This command only works in the [Bot Command Center]({topic_link}) topic.",
                 parse_mode="Markdown",
                 disable_web_page_preview=True,
             )
