@@ -38,6 +38,17 @@ async def _typing_indicator_job(context: CallbackContext):
         logger.warning("Failed to send typing action: %s", e)
 
 
+async def _delete_messages_job(context: CallbackContext):
+    """Job to delete messages after a delay."""
+    chat_id = context.job.data.get("chat_id")
+    message_ids = context.job.data.get("message_ids", [])
+    for msg_id in message_ids:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception as e:
+            logger.warning("Failed to auto-delete message %s: %s", msg_id, e)
+
+
 async def ask_cmd(update: Update, context: CallbackContext):
     """
     Handle the /ask command.
@@ -118,9 +129,13 @@ async def ask_cmd(update: Update, context: CallbackContext):
         # Pull the specialized context
         context_data = get_topics_content(topic_keys)
 
+        # Determine the user's name or username to pass to the AI
+        user_obj = update.effective_user
+        ai_username = user_obj.username or user_obj.first_name
+
         # Step 2: Answer Generation
         generation_prompt = ANSWER_GENERATION_PROMPT.format(
-            context=context_data, question=question
+            context=context_data, question=question, username=ai_username
         )
 
         final_response = gemini_client.models.generate_content(
@@ -136,7 +151,7 @@ async def ask_cmd(update: Update, context: CallbackContext):
 
         final_message = answer_text
 
-        await context.bot.send_message(
+        sent_msg = await context.bot.send_message(
             chat_id=chat_id,
             message_thread_id=thread_id,
             text=final_message,
@@ -144,12 +159,22 @@ async def ask_cmd(update: Update, context: CallbackContext):
             reply_to_message_id=update.message.message_id,
         )
 
+        # Schedule auto-delete for original command and response after 60 seconds
+        context.job_queue.run_once(
+            _delete_messages_job,
+            60,
+            data={
+                "chat_id": chat_id,
+                "message_ids": [update.message.message_id, sent_msg.message_id],
+            },
+        )
+
     except Exception as e:
         logger.error(f"Error handling /ask command: {e}")
         await context.bot.send_message(
             chat_id=chat_id,
             message_thread_id=thread_id,
-            text="Sorry Sugar, my neural link is experiencing interference right now. Try again later.",
+            text="My neural link is experiencing interference right now. Try again later.",
             reply_to_message_id=update.message.message_id,
         )
     finally:
