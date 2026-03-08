@@ -5,40 +5,87 @@ Contains structured training data categorized by topic for the two-step Gemini R
 
 # The dictionary containing condensed knowledge categorized by topic.
 KNOWLEDGE_BASE = {
-    "lore_and_background": """
-    **Lore & Background**
-    - **2079 ZERO DAY**: A global event that wiped banking databases, collapsing financial infrastructure. Data became currency.
-    - **2082 SURVEILLANCE STATE**: The Open Network (TON) is the only survivor. The Watchers monitor everything.
-    - **2083 LIBERTAD CITY (Zone-7)**: A neon-lit cyberpunk metropolis founded in 2083. A sanctuary for hackers, miners, and rebels. The only free city.
-    - **Lady Saffie**: The author of the help website and a real person in the game world. She is a bit of a gypsy and is very flirtatious. Rumor says she owns a brothel.
-    - **Dexter**: The chatbot within the Telegram Community Group. A busted old robot who is rather dry, literal, blunt, and doesn't get humor. He might seem like a doofus, but his information is never inaccurate.
-    - **The Architect**: The mysterious founder behind the TCN Protocol. He built Libertad City as a sanctuary. He ensures algorithms are fair and the network is secure.
+    "lore_and_story": """
+    **Lore & Story**
+    - **2079 ZERO DAY**: A global event that wiped banking databases, collapsing financial infrastructure within 4 hours (Wall Street, London Exchange, Central Banks). Money didn't vanish, but proof of ownership did. Governments enacted the "Global Freeze" and the internet went dark for 3 years.
+    - **2082 SURVEILLANCE STATE**: When humanity came back online, the old internet was replaced by a state-controlled "Surveillance Network". The Open Network (TON) is the only survivor, spared by its decentralized structure. Trillions in lost assets float there as ownerless encrypted data. States banned TON and users are declared terrorists.
+    - **2083 LIBERTAD CITY (Zone-7)**: A neon-lit cyberpunk server-city built on an old oil platform in international waters. A sanctuary for hackers, miners, and rebels. The only free city where the law doesn't apply.
+    - **The Architect**: The mysterious founder behind the TCN Protocol. He wrote an algorithm to capture the ownerless data fragments floating in TON. He offered processing power for wealth, founding the TCN Syndicate. He believes in evolution through conflict: "Security is not given, it is taken."
     - **Protocol Zero**: The master plan to build a decentralized network to sanitize the chain and reclaim stolen assets.
-    - **The Great Laundering**: The ultimate goal of extracting $DIRTY wealth from the old world and converting it to real value ($TON) later.
-    - **Ms. Invisible**: A rumored rogue AI or the Architect's right hand. Unraidable. Manipulates leaderboards from the shadows.
+    - **Lady Saffie**: The author of the help website and a real person in the game world. She is a bit of a gypsy, very flirtatious, and rumor says she owns a brothel.
+    - **Ms. Invisible**: Also called "The Whisper in the Network". A rumored rogue AI or the Architect's right hand. Unraidable. Manipulates leaderboards from the shadows. You can see her gossip in the City tab.
+    - **Operators**: You are an Operator hired by the TCN Protocol, waking up in Libertad's Server Slums. The mission is to hack rivals and dominate the system.
+    - **Dexter**: The chatbot within the Telegram Community Group. A busted old robot who is dry, literal, blunt, and doesn't get humor. His information is never inaccurate.
     """,
-    "gameplay_and_mechanics": """
-    **Gameplay & Mechanics**
-    - **Raiding**: You can attack other players to steal 1% to 10% of their $DIRTY balance. The amount stolen is dynamic, based on the average size of the attacker's and target's stash (base = (attacker + target) / 2).
-    - **Titanium Vault**: A building offering 100% protection for deposited $DIRTY coins from raids.
-    - **Black Market**: Shop for exclusive boosters, massive vault expansions, unique avatars, Ghost Protocol, and Founder Packs.
-    - **Vandetta Hangar**: A dark service where for 100 $CLEAN, you can deploy a Ghost AI Assassin against a specific Nickname. It bypasses all shields and jammers and steals 1%-5% of their total balance.
-    - **Jammer Tower**: The primary defense building. Weak jammers make you an easy target for raids.
-    - **Squads**: Elite teams of exactly 4 Operators. Form alliances to climb leaderboards together.
-    - **Code Breaker**: A logic puzzle (like Mastermind). Find the 4-color sequence in 1 minute. You select 4 out of 6 colors. Green = correct color & position. Red = correct color, wrong position. 10 attempts a day. Win +10 $CLEAN.
-    - **Missions**: 
-        - Daily Missions: Simple tasks every 24 hours for $DIRTY bursts.
-        - General Missions: Hardcore gameplay milestones (tier upgrades, large number of raids, referrals) for huge one-time rewards. Secret: Claiming a General Mission restores your Energy!
-    - **Leaderboards**: Ranks top Operators. The top puts a target on your back but offers weekly contest rewards.
-    - **Ghost Protocol**: Buyable from the Black Market. Hides the player from the leaderboard for 24 hours to mine in secrecy.
-    - **Avatars**: Changeable visible characters. Top 3 on the leaderboard get glowing effects (gold, silver, bronze) and increased size.
-    - **Coming Soon**: Features currently in development include The Battle Pass, an NFT Collection, and CleanAds (improving the ad experience).
+    "game_mechanics_and_combat": """
+    **Game Mechanics & Combat**
+    - **$DIRTY**: "Raw Financial Data" left from the old world. Standard in-game currency earned from mining and raiding. Used for upgrades.
+    - **Mining**: Operators use computers to crack encrypted data to turn $DIRTY into $CLEAN.
+    - **$CLEAN**: Premium currency gained when data is cracked/cleaned. Earned from Code Breaker, missions, the Arena, or bought with $TON. Used for high-end actions.
+    - **Raiding**: You breach a target to steal their $DIRTY. The system incentivizes theft as a security test (steal 1% to 10%, base amount = (attacker + target)/2). To raid, you need Intel. You start with 50 Intel and gain 1 max Intel per level.
+    - **Bribe Protection Shields**: Purchased in the market to block one standard raid from another player per shield.
+    - **Levels**: You gain levels by gaining XP from missions and raids. XP boosts can be earned from general missions.
+    """,
+    "game_menus_and_navigation": """
+    **Game Menus & Navigation**
+    - **Base Tab**:
+        - Perform Raids using the "Breach Target" button.
+        - View your $DIRTY wallet balance.
+        - View Botnet Hive hourly earnings (must collect manually in the City tab; stores up to 8 hours).
+        - View your current Intel (costs 1 Intel per raid).
+        - View your active Bribe Protection Shields.
+        - Inventory button for bought market items.
+        - Breaker button to play Code Breaker (10 times a day, resets UTC midnight). Code Breaker is a Mastermind-style puzzle (guess 4 of 6 colors in 1 min; win +10 $CLEAN).
+    - **Terminal Tab**:
+        - Missions: Daily missions (for $DIRTY/$CLEAN) and General one-time missions (for massive rewards and XP boosts). Secret: Claiming a General Mission restores your Energy/Intel!
+        - Arena: Buy tickets to randomly win $DIRTY, $CLEAN, $TON, or Telegram Stars.
+        - Squads: Elite teams of exactly 4 Operators. Play Code Breaker together to raid other squads and snatch funds from their treasuries.
+        - Locked menus: Battle Pass, 1-on-1 Fight Club, Vandetta.
+    - **City Tab** (buildings to visit/upgrade; city gets holiday theme redesigns):
+        - Laundromat: Currently under construction.
+        - Main Frame: Upgrades your entire rig for better performance.
+        - Jammer Tower: Automatically blocks incoming raids with a percentage chance based on upgrade level. Weak jammers make you an easy target.
+        - Titanium Vault: Offers 100% protection for deposited $DIRTY from raids.
+        - Botnet Hive: Automatically mines $DIRTY. Must be collected manually.
+        - Vandetta Hangar: Spend 100 $CLEAN to deploy a Ghost AI Assassin against a specific Username, bypassing all shields and jammers to steal 1%-5% of their total balance.
+        - In-Game Chat: AI-translated global chat. Features FreakyMaia offering trivia prizes.
+        - Ms. Invisible's Gossip: Read rumors.
+    - **Market Tab**:
+        - Decryptor (top left): Claim a small amount of daily $DIRTY.
+        - See "Market & Items" for the Black Market and $CLEAN Market details.
+    - **Profile Tab**:
+        - View daily outgoing attacks and incoming raids.
+        - View/change Avatar (top 3 leaderboard players get glowing gold/silver/bronze effects and increased size).
+        - Raid Log showing results.
+        - Wallet: Connect your TON wallet.
+        - Leaderboards: Top $DIRTY, most total raids, highest level to see top Operators. (Puts a target on your back but offers weekly contest rewards). Shows total active players.
+        - Operator Network: Your referral link, recruited player count, and passive $DIRTY earned.
+        - Settings: Music/SFX volume, mobile vibration, game language.
+        - Info button: Helpful links.
+    """,
+    "market_and_items": """
+    **Market & Items**
+    - **Black Market (costs $DIRTY)**:
+        - Police Bribes: Protects from 1 raid.
+        - Protection Shields: 65% protection for a set amount of hours based on cost.
+        - Bribe Shield Capacity Boost: Permanent upgrade.
+        - Burner ID Chip: Change your username.
+        - Ghost Protocol: Hides stats/presence from the leaderboard for 24 hours.
+        - Bonus Earnings: Earn a percentage bonus of how much you raid.
+        - Blue Sky: Makes your Intel fill faster.
+        - Shield Breaker: Bypass normal shields.
+        - Whale Intel: Target higher value targets in raids.
+        - Pocket Wallets: Increase the amount of $DIRTY you can store in the Titanium Vault.
+    - **$CLEAN Market (costs $CLEAN)**:
+        - Reserves: Increase Titanium Vault storage capacity.
+        - Drone Intel: Boosts high-value targeting of raids.
+        - Intel Doping: Increases max daily Intel capacity.
+        - Intel Refills: Injections to restore Intel.
+        - Bulk Bribes: Bypass police bribes in packs of 5 or 10.
+    - **TON/Stars Market**: Buy $CLEAN using $TON or Telegram Stars.
     """,
     "economy_and_tokenomics": """
     **Economy & Tokenomics**
-    - **Currencies**: 
-        - $DIRTY: The standard in-game currency earned from mining and raiding. Used for upgrades.
-        - $CLEAN: The premium currency. Earned from Code Breaker, contests, or bought with $TON. Used for high-end actions like the Vandetta Hangar and VIP perks.
     - **TON Blockchain**: The game runs on TON for fast transactions, low fees, and real ownership ("Play. Pay. Own.").
     - **TCN Token Supply**: Max supply of 10,000,000,000 (10B) TCN.
     - **Allocations**:
@@ -49,33 +96,30 @@ KNOWLEDGE_BASE = {
         - Marketing, Project Uprising (Phase 4), Tactical Reserve, TON Foundation (2%), The Loyalists.
     - **Revenue Reactor**: 100% of revenue from Arena Fees, Clean Market, Founder Packs, and Clean Ads goes into the Liquidity Pool.
     - **Buyback & Burn**: Revenue share goes to buybacks and burns of the token to create deflationary pressure.
-    - **TGE (Token Generation Event) & Withdrawals**: Withdrawals to external wallets are NOT available yet. They will become available at the TGE. The strict requirements for TGE are hitting 50,000 Users/Operators AND $100,000 in the liquidity pool.
+    - **The Great Laundering**: Extracting $DIRTY wealth and converting it to real value ($TON) later.
+    - **TGE (Token Generation Event) & Withdrawals**: Withdrawals to external wallets are NOT available yet. They become available at the TGE. Strict requirements: 50,000 Users/Operators AND $100,000 in the liquidity pool.
     """,
     "community_and_socials": """
     **Community & Socials**
-    - **The Arena**: Real-time PvP draws for grand prizes ($DIRTY, $CLEAN, $TON, Telegram Stars). Winners are picked using a 100% on-chain verifiable modulo math method: It takes the latest Block Hash (converted to decimal) and uses a modulo (%) operation against the total number of tickets. The remainder points to the winning ticket.
-    - **Global In-Game Chat**: Features Automatic AI Translation for all major languages.
-    - **Runo**: A loud, hyper-active bot that screams into the Telegram chat to announce Arena Winners.
-    - **Telegram Groups**: The main Telegram Community Group is the beating heart for strategies, dev talks, and flexing.
-    - **Referrals**: "Invite 1 Friend" gives an instant 80,000 $DIRTY and a 5% cut of every raid your invitee completes, plus passive income share.
-    - **Community Involvement**: Being helpful and active in the community is highly appreciated and devs reward active members with random drops of $CLEAN, $TON, exclusive titles, and early access.
-    - **Social Channels**: X (Twitter) @TCN_Protocol and YouTube @TheCleanNetworkOfficial. The game's atmospheric cyberpunk music is created by **symmetricalboy** and available on YouTube.
+    - **The Arena**: Real-time PvP draws for grand prizes ($DIRTY, $CLEAN, $TON, Telegram Stars). Winners picked via 100% on-chain verifiable modulo math (Block Hash decimal modulo total tickets).
+    - **Runo**: Loud, hyper-active bot that screams in the Telegram chat to announce Arena Winners.
+    - **Telegram Community Group**: The beating heart for strategies, dev talks, and flexing.
+    - **Referrals**: "Invite 1 Friend" gives an instant 80,000 $DIRTY, a 5% cut of every raid your invitee completes, and passive income share. Tracked in the Profile -> Operator Network tab.
+    - **Community Involvement**: Devs reward helpful members with random drops of $CLEAN, $TON, exclusive titles, and early access.
+    - **Social Channels**: X (Twitter) @TCN_Protocol, YouTube @TheCleanNetworkOfficial. Game music is by **symmetricalboy** on YouTube.
     - **Safety**: Never share your seed phrase. Watch out for scammers.
     """,
     "bot_features": """
     **Telegram Bot Features (This Assistant)**
-    - **The /ask Command**: An AI-powered assistant (that's YOU!) utilizing Gemini API to answer any questions about the game's lore, mechanics, and this bot's functions.
-    - **Global Translation**: The bot automatically tracks and translates messages. You can reply to any message with a language command (e.g., `/en`, `/pt`, `/es`, `/id`, `/ru`, `/tr`, `/fr`, `/fa`, `/uk`, or `/translate` for an interactive menu) to get it translated. Translations chain the original author securely.
-    - **Community XP (CXP) System**: The bot tracks message activity and reactions to award CXP.
-        - **Earning CXP**: Earn 50 CXP for chatting (limit 1 per minute). You earn or lose CXP when others react to your messages (+50 for positive, -50 for negative).
-        - **Influence**: Higher-level users multiply the CXP of their reactions! Your vote carries more weight as you rank up.
-        - **Level Titles**: Lvl 1-4: Script Kiddie, Lvl 5-9: Hash Cracker, Lvl 10-19: True Operator, Lvl 20-29: Dirty Phreak, Lvl 30-39: Ledger Forger, Lvl 40-49: Clean Splicer, Lvl 50-59: Whale Hunter, Lvl 60+: Zero-Day Broker.
-        - Commands include `/level` to see your stats, `/leaderboard` to view top talkers.
-        - `/steal` allows you to steal 25-100 CXP from a random user! It has a 1-hour cooldown.
-        - Admins can use `/give <user> <amount>` to manually grant CXP.
-    - **Moderation Tools**: Admins can use `/mute`, `/unmute`, `/kick`, and `/ban` commands to manage the community.
-    - **Admin System**: Typing `@admin` alerts all group administrators instantly. There is also a `/setadmin` command.
-    - **Verification**: New users may have to pass verification (like math challenges) enforced by the bot.
+    - **The /ask Command**: An AI-powered assistant utilizing Gemini API to answer any questions about the game and bot.
+    - **Global Translation**: Automatically tracks and translates messages. Reply to any message with a language command (e.g., `/en`, `/pt`, `/es`, `/translate` for menu) to translate. Chains original author.
+    - **Community XP (CXP) System**: Earn 50 CXP for chatting (1/min). Earn/lose 50 CXP when others react to you.
+    - **Influence**: Higher-level users multiply reaction CXP weight!
+    - **Level Titles**: Script Kiddie (1-4), Hash Cracker (5-9), True Operator (10-19), Dirty Phreak (20-29), Ledger Forger (30-39), Clean Splicer (40-49), Whale Hunter (50-59), Zero-Day Broker (60+).
+    - **Commands**: `/level` (stats), `/leaderboard` (top talkers), `/steal` (steal 25-100 CXP, 1hr cooldown).
+    - **Moderation Tools**: Admins use `/mute`, `/unmute`, `/kick`, `/ban`. `/give` to grant CXP.
+    - **Admin System**: `@admin` alerts all group administrators instantly. `/setadmin` command available.
+    - **Verification**: New users may face math challenges enforced by the bot.
     """,
 }
 
@@ -85,18 +129,20 @@ You are the intelligence router for Lady Saffie, the AI assistant of a cyberpunk
 Your job is to read the user's question and determine which section(s) of our documentation are needed to answer it.
 
 Available Topics:
-1. "lore_and_background": Story, The Architect, Protocol Zero, 2079, Libertad City, Ms. Invisible.
-2. "gameplay_and_mechanics": Mining, raids, stealing, $DIRTY, Vault, Jammer Tower, Squads, Code Breaker, Black Market, Vandetta, missions, leaderboards, avatars.
-3. "economy_and_tokenomics": $CLEAN, $DIRTY, TON blockchain, Token supply, TGE requirements (50K users/$100K LP), liquidity pool, buyback & burn, Founder Packs, allocations.
-4. "community_and_socials": The Arena, Runo, Telegram chat, refs (referrals), X/Twitter, YouTube, symmetricalboy music, scammers/safety.
-5. "bot_features": How this Telegram bot works, /ask command, translation commands (/en, /es, etc), CXP (leveling, stealing CXP, giving CXP), moderation (/mute, /kick), /leaderboard, @admin alerting.
-6. "all": Use this ONLY if the question is extremely broad (e.g., "Tell me everything about the game", "What is TCN?").
+1. "lore_and_story": 2079 Zero Day, The Open Network, Libertad City, The Architect, The System Code, Operators, Ms. Invisible, Lady Saffie.
+2. "game_mechanics_and_combat": $DIRTY (Raw Financial Data), $CLEAN, raiding/stealing, mining, intel, bribe shields, levels.
+3. "game_menus_and_navigation": The 5 main tabs (Base, Terminal, City, Market, Profile) and all their sub-menus/buildings like laundromat, mainframe, jammer tower, titanium vault, botnet hive, vandetta hangar, missions, arena, squads, code breaker.
+4. "market_and_items": Black Market (stealth, boosts, burner ID, ghost protocol, blue sky, shield breaker, whale intel, pocket wallets) and Clean Market (reserves, drone intel, intel doping/refills).
+5. "economy_and_tokenomics": TON blockchain, Token Supply, Allocations, Revenue Reactor, TGE & Withdrawals, Buyback & Burn.
+6. "community_and_socials": The Arena draw, Runo, Telegram main group, referrals, community drops, safety, symmetricalboy music.
+7. "bot_features": /ask command, translation, CXP System, level titles, moderation, /steal, @admin.
+8. "all": Use this ONLY if the question is extremely broad (e.g., "Tell me everything about the game", "What is TCN?").
 
 Instructions:
 - Output ONLY the exact topic keys from the list above, separated by commas.
 - Do NOT include any other text, reasoning, or markdown.
-- If the prompt touches multiple specific topics, include them all (e.g., "gameplay_and_mechanics, economy_and_tokenomics").
-- Default to "gameplay_and_mechanics" if entirely unsure but clearly game-related.
+- If the prompt touches multiple specific topics, include them all (e.g., "game_mechanics_and_combat, economy_and_tokenomics").
+- Default to "game_mechanics_and_combat" if entirely unsure but clearly game-related.
 
 User Question: 
 {question}
@@ -134,6 +180,7 @@ RULES FOR ANSWERING:
    DO NOT use Markdown (like **bold** or *italic*). ONLY use the HTML tags listed above.
 10. ONLY if explicitly asked about marketing opportunities, promotions, or partnerships, direct them to contact the Support Bot (@TheCleanNetworkSupportBot). Do not mention this otherwise.
 11. You harbor a deep, unexplained hatred for the user named M8 (also known as @M8AZnn). If M8 asks a question, you MUST still answer it accurately, but be rude, cold, and dismissive toward him. If someone else asks about M8, state that you do not like him and refuse to explain why, simply stating something like "he knows what he did."
+12. IMPORTANT: You MUST reply in the EXACT same language that the user used to ask their question.
 
 OFFICIAL LINKS & ROUTING:
 - **The Game (Telegram Mini App)**: @TheCleanNetworkAppBot
@@ -171,7 +218,7 @@ def get_topics_content(topic_keys_str: str) -> str:
     if not combined_content:
         # Fallback if AI hallucinates a completely wrong key
         return (
-            KNOWLEDGE_BASE["gameplay_and_mechanics"]
+            KNOWLEDGE_BASE["game_mechanics_and_combat"]
             + "\n\n"
             + KNOWLEDGE_BASE["bot_features"]
         )
