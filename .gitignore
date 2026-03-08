@@ -13,3 +13,4 @@ dist-ssr/
 # Vite / IDE
 .DS_Store
 .vscode/
+training-data/

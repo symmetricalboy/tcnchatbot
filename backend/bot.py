@@ -21,7 +21,7 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 
 from database import db
-from handlers.init_config import get_config_conversation_handler
+from handlers.owner_menu import get_config_conversation_handler
 from handlers.verification import welcome_new_member, verify_user
 from handlers.service_cleaner import clean_service_messages
 from handlers.cxp import (
@@ -29,13 +29,12 @@ from handlers.cxp import (
     evaluate_reaction,
     user_stats_cmd,
     leaderboard_cmd,
-    cxp_help_cmd,
-    commands_cmd,
     give_cxp_cmd,
     get_id_cmd,
     set_admin_cmd,
     steal_cxp_cmd,
 )
+from handlers.help import help_cmd, commands_cmd
 from handlers.translation import (
     translate_en_cmd,
     translate_pt_cmd,
@@ -50,6 +49,7 @@ from handlers.translation import (
     translate_callback,
 )
 from handlers.moderation import mute_cmd, unmute_cmd, kick_cmd, ban_cmd
+from handlers.ai_chat import ask_cmd
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
 warnings.filterwarnings(
@@ -183,7 +183,7 @@ def main() -> None:
     application.add_handler(MessageReactionHandler(evaluate_reaction))
     application.add_handler(CommandHandler("level", user_stats_cmd))
     application.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
-    application.add_handler(CommandHandler("help", cxp_help_cmd))
+    application.add_handler(CommandHandler("help", help_cmd))
     application.add_handler(CommandHandler("commands", commands_cmd))
     application.add_handler(CommandHandler("give", give_cxp_cmd))
     application.add_handler(CommandHandler("checkid", get_id_cmd))
@@ -207,6 +207,9 @@ def main() -> None:
     application.add_handler(CommandHandler("unmute", unmute_cmd))
     application.add_handler(CommandHandler("kick", kick_cmd))
     application.add_handler(CommandHandler("ban", ban_cmd))
+
+    # AI Chat
+    application.add_handler(CommandHandler("ask", ask_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))
