@@ -5,6 +5,7 @@ from telegram.constants import ParseMode, ChatAction
 from telegram.ext import CallbackContext
 from google import genai
 from datetime import datetime, timezone
+import html
 
 from database import db
 
@@ -62,22 +63,39 @@ async def time_cmd(update: Update, context: CallbackContext):
     thread_id = update.message.message_thread_id
     original_message_id = update.message.message_id
 
-    target = " ".join(context.args) if context.args else ""
-    if not target:
-        await update.message.reply_text(
-            "Please provide a location or a username. Usage: `/time <location>` or `/time @username`\nExample: `/time Tokyo` or `/time @M8AZnn`",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
+    target = " ".join(context.args).strip().lower() if context.args else ""
 
-    target_location = target
+    # Check for empty target or game-related aliases for Libertad City
+    libertad_aliases = [
+        "",
+        "libertad",
+        "libertad city",
+        "in game",
+        "game",
+        "tcn",
+        "the clean network",
+        "clean network",
+        "zone 7",
+        "utc",
+    ]
 
-    # Check if target is a username
-    if target.startswith("@"):
+    if target in libertad_aliases:
+        target_location = "Libertad City (UTC)"
+        is_libertad = True
+    else:
+        target_location = target
+        is_libertad = False
+
+    target_name = None
+    # Check if target is a username (only if it's not a Libertad alias)
+    if not is_libertad and target.startswith("@"):
         username = target.lstrip("@")
         user = await db.get_user_by_username(username)
         if user and user.get("location"):
             target_location = user["location"]
+            target_name = (
+                user.get("display_name") or f"@{user.get('username') or username}"
+            )
         else:
             await update.message.reply_text(
                 f"User @{username} has not set a location or doesn't exist.\n"
@@ -110,13 +128,46 @@ async def time_cmd(update: Update, context: CallbackContext):
     try:
         current_iso_time = datetime.now(timezone.utc).isoformat()
 
+        prompt_addition = ""
+        if is_libertad:
+            prompt_addition = "The requested location is Libertad City, the fictional cyberpunk setting of the game The Clean Network. It runs on UTC time."
+
+        format_instructions = ""
+        if target_name:
+            format_instructions = f"""
+        You MUST format your response EXACTLY as follows, using ONLY these HTML tags and NO markdown:
+        {html.escape(target_name)}
+        <b>[Resolved Location Name]</b>
+        [Day of week], [Month] [Day][Ordinal Suffix] - [Time in 12-hour format with AM/PM]
+        
+        Example:
+        {html.escape(target_name)}
+        <b>Minneapolis, MN</b>
+        Sunday, March 8th - 10:44PM
+            """
+        else:
+            format_instructions = """
+        You MUST format your response EXACTLY as follows, using ONLY these HTML tags and NO markdown:
+        <b>[Resolved Location Name]</b>
+        [Day of week], [Month] [Day][Ordinal Suffix] - [Time in 12-hour format with AM/PM]
+        
+        Example:
+        <b>Minneapolis, MN</b>
+        Sunday, March 8th - 10:44PM
+            """
+
         prompt = f"""
         The user wants to know the current time and date in a specific location.
         The system's current UTC time is: {current_iso_time}
         The user's requested location or time zone string is: '{target_location}'
         
-        Please figure out the location or time zone they are referring to to the best of your ability, calculate the current time there, and respond with a brief and friendly message stating the current local time and date for that location. You can be concise.
-        Format your response beautifully using standard text or safe characters. Do not use markdown that isn't supported by Telegram (use simple html tags like <b> <i> if needed). Do not include a title or generic greeting, just state the location, time, and date directly.
+        {prompt_addition}
+        
+        CRITICAL INSTRUCTION: Calculate the exact current local time for their location. You MUST accurately account for Daylight Savings Time (DST) if it is currently in effect for that locaton on this specific date.
+
+        {format_instructions}
+        
+        Do not include any greeting, title, or other text. Just output the formatted string.
         """
 
         response = gemini_client.models.generate_content(
