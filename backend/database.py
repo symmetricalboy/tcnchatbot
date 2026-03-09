@@ -51,6 +51,7 @@ class Database:
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_steal_time TIMESTAMP;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS location VARCHAR(255);
 
                 CREATE TABLE IF NOT EXISTS messages (
                     chat_id BIGINT,
@@ -212,6 +213,24 @@ class Database:
                     user_id,
                     display_name,
                 )
+
+    async def get_user_location(self, user_id: int):
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT location FROM users WHERE user_id = $1", user_id
+            )
+
+    async def update_user_location(self, user_id: int, location: str):
+        if not self.pool or not location:
+            return
+        # Basic input validation, ensuring it's not too long
+        location = location[:255]
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET location = $2 WHERE user_id = $1", user_id, location
+            )
 
     async def update_user_admin_status(self, user_id: int, is_admin: bool):
         if not self.pool:
