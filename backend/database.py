@@ -1,6 +1,8 @@
 import asyncpg
 import os
 import logging
+import time
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -8,6 +10,8 @@ logger = logging.getLogger(__name__)
 class Database:
     def __init__(self):
         self.pool = None
+        self._config_cache = None
+        self._config_cache_time = 0
 
     async def connect(self):
         database_url = os.getenv("DATABASE_URL")
@@ -85,6 +89,13 @@ class Database:
                     PRIMARY KEY (chat_id, message_id)
                 );
                 
+                CREATE TABLE IF NOT EXISTS user_daily_cxp (
+                    user_id BIGINT,
+                    date DATE,
+                    cxp_gained INTEGER DEFAULT 0,
+                    PRIMARY KEY (user_id, date)
+                );
+                
                 INSERT INTO bot_config (id, welcome_message) 
                 VALUES (1, 'Welcome {mention}!\n\n📜 Community Rules:\n- Be polite and respectful\n- No spam or unwanted advertising\n- Follow moderator instructions\n- Please use the appropriate topics for your discussions\n\n🎮 Enjoy your time in The Clean Network Community!') 
                 ON CONFLICT (id) DO NOTHING;
@@ -103,8 +114,14 @@ class Database:
     async def get_config(self):
         if not self.pool:
             return None
+        if self._config_cache and time.time() - self._config_cache_time < 60:
+            return self._config_cache
+
         async with self.pool.acquire() as conn:
-            return await conn.fetchrow("SELECT * FROM bot_config WHERE id = 1")
+            config = await conn.fetchrow("SELECT * FROM bot_config WHERE id = 1")
+            self._config_cache = config
+            self._config_cache_time = time.time()
+            return config
 
     async def update_config(self, **kwargs):
         if not self.pool:
@@ -144,6 +161,7 @@ class Database:
                 logger.info(f"update_config execute result: {result}")
                 if result == "UPDATE 0":
                     raise Exception("Database configuration row id=1 is missing.")
+                self._config_cache = None
                 return True
         except Exception as e:
             logger.error(f"update_config encountered an unexpected error: {e}")
@@ -249,17 +267,30 @@ class Database:
     async def update_user_cxp(self, user_id, delta_cxp, update_timestamp=False):
         if not self.pool:
             return False
+        utc_date = datetime.now(timezone.utc).date()
         async with self.pool.acquire() as conn:
-            if update_timestamp:
+            async with conn.transaction():
+                if update_timestamp:
+                    await conn.execute(
+                        "UPDATE users SET cxp = cxp + $2, last_message_time = CURRENT_TIMESTAMP WHERE user_id = $1",
+                        user_id,
+                        delta_cxp,
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE users SET cxp = cxp + $2 WHERE user_id = $1",
+                        user_id,
+                        delta_cxp,
+                    )
                 await conn.execute(
-                    "UPDATE users SET cxp = cxp + $2, last_message_time = CURRENT_TIMESTAMP WHERE user_id = $1",
+                    """
+                    INSERT INTO user_daily_cxp (user_id, date, cxp_gained)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (user_id, date) DO UPDATE 
+                    SET cxp_gained = user_daily_cxp.cxp_gained + $3
+                    """,
                     user_id,
-                    delta_cxp,
-                )
-            else:
-                await conn.execute(
-                    "UPDATE users SET cxp = cxp + $2 WHERE user_id = $1",
-                    user_id,
+                    utc_date,
                     delta_cxp,
                 )
             return True
@@ -274,13 +305,29 @@ class Database:
             )
             return count + 1
 
-    async def get_leaderboard(self, limit=3):
+    async def get_leaderboard(self, limit=3, start_date=None, end_date=None):
         if not self.pool:
             return []
         async with self.pool.acquire() as conn:
-            return await conn.fetch(
-                "SELECT * FROM users ORDER BY cxp DESC LIMIT $1", limit
-            )
+            if start_date and end_date:
+                return await conn.fetch(
+                    """
+                    SELECT u.user_id, u.is_admin, u.display_name, u.username, u.cxp AS total_cxp,
+                           COALESCE(SUM(d.cxp_gained), 0) AS cxp
+                    FROM users u
+                    JOIN user_daily_cxp d ON u.user_id = d.user_id
+                    WHERE d.date >= $1 AND d.date <= $2
+                    GROUP BY u.user_id, u.is_admin, u.display_name, u.username, u.cxp
+                    HAVING COALESCE(SUM(d.cxp_gained), 0) > 0
+                    ORDER BY cxp DESC
+                    LIMIT $3
+                    """,
+                    start_date, end_date, limit
+                )
+            else:
+                return await conn.fetch(
+                    "SELECT * FROM users ORDER BY cxp DESC LIMIT $1", limit
+                )
 
     async def record_message(self, chat_id, message_id, user_id):
         if not self.pool:

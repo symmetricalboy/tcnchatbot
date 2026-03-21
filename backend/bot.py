@@ -100,6 +100,13 @@ async def auth_middleware(update: Update, context) -> None:
             )
         raise ApplicationHandlerStop()
 
+    if chat_type in ("group", "supergroup"):
+        config = await db.get_config()
+        if config:
+            main_group_id = config.get("main_group_id")
+            if main_group_id and update.effective_chat.id != main_group_id:
+                raise ApplicationHandlerStop()
+
 
 async def admin_mention(update: Update, context) -> None:
     """Handle @admin mentions to notify all admins, restricted to the public topic group."""
