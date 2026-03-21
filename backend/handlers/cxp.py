@@ -2,7 +2,8 @@ import logging
 import math
 import random
 import asyncio
-from datetime import datetime
+import calendar
+from datetime import datetime, timedelta, timezone
 from telegram import Update
 from telegram.ext import CallbackContext
 import httpx
@@ -754,6 +755,65 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
         )
 
 
+def parse_leaderboard_args(args):
+    """Returns (start_date, end_date, title_string) or (None, None, 'Global Leaderboard (All-Time)') for all-time"""
+    if not args:
+        return None, None, "Global Leaderboard (All-Time)"
+        
+    arg_str = " ".join(args).lower().strip()
+    now_utc = datetime.now(timezone.utc).date()
+    
+    if arg_str in ["today", "day", "daily", "this day"]:
+        return now_utc, now_utc, "Daily Leaderboard"
+        
+    if arg_str == "yesterday":
+        yesterday = now_utc - timedelta(days=1)
+        return yesterday, yesterday, "Yesterday's Leaderboard"
+        
+    if arg_str in ["week", "weekly", "this week"]:
+        start_of_week = now_utc - timedelta(days=now_utc.weekday())
+        end_of_week = start_of_week + timedelta(days=6)
+        return start_of_week, end_of_week, "Weekly Leaderboard"
+        
+    if arg_str == "last week":
+        start_of_last_week = now_utc - timedelta(days=now_utc.weekday() + 7)
+        end_of_last_week = start_of_last_week + timedelta(days=6)
+        return start_of_last_week, end_of_last_week, "Last Week's Leaderboard"
+        
+    if arg_str in ["month", "monthly", "this month"]:
+        start_of_month = now_utc.replace(day=1)
+        last_day = calendar.monthrange(now_utc.year, now_utc.month)[1]
+        end_of_month = now_utc.replace(day=last_day)
+        return start_of_month, end_of_month, "Monthly Leaderboard"
+        
+    if arg_str == "last month":
+        first_of_this_month = now_utc.replace(day=1)
+        end_of_last_month = first_of_this_month - timedelta(days=1)
+        start_of_last_month = end_of_last_month.replace(day=1)
+        return start_of_last_month, end_of_last_month, "Last Month's Leaderboard"
+        
+    # Handle specific months
+    months = {
+        "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+        "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
+    }
+    
+    if arg_str in months:
+        target_month = months[arg_str]
+        target_year = now_utc.year
+        if target_month > now_utc.month:
+            target_year -= 1 # Assume they mean last year if the month hasn't happened yet this year
+            
+        start_date = datetime(target_year, target_month, 1).date()
+        last_day = calendar.monthrange(target_year, target_month)[1]
+        end_date = datetime(target_year, target_month, last_day).date()
+        month_name = calendar.month_name[target_month]
+        return start_date, end_date, f"{month_name} Leaderboard"
+        
+    return None, None, "Global Leaderboard (All-Time)"
+
+
 async def leaderboard_cmd(update: Update, context: CallbackContext):
     """Handler for /leaderboard. Shows top 10, skipping admins."""
     config = await db.get_config()
@@ -768,14 +828,16 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
     except Exception as e:
         logger.warning(f"Failed to delete /leaderboard message: {e}")
 
+    start_date, end_date, title = parse_leaderboard_args(context.args)
+
     # Fetch a wider net in case many are admins
-    top_candidates = await db.get_leaderboard(limit=50)
+    top_candidates = await db.get_leaderboard(limit=50, start_date=start_date, end_date=end_date)
     if not top_candidates:
         if main_group_id and cxp_topic_id:
             await context.bot.send_message(
                 chat_id=main_group_id,
                 message_thread_id=cxp_topic_id,
-                text="The leaderboard is currently empty!",
+                text=f"The {title.lower()} is currently empty!",
             )
         return
 
@@ -811,13 +873,14 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
             )
         return
 
-    msg = "🏆 **Global Leaderboard (Top 10)** 🏆\n\n"
+    msg = f"🏆 **{title} (Top 10)** 🏆\n\n"
 
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
     for i, row in enumerate(actual_top_10):
         u_id = row.get("user_id")
         cxp = row.get("cxp", 0)
-        level = calculate_level(cxp)
+        total_cxp = row.get("total_cxp", cxp)
+        level = calculate_level(total_cxp)
         medal = medals[i] if i < len(medals) else f"#{i+1}"
 
         name = row.get("display_name")
