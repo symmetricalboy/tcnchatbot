@@ -755,7 +755,7 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
         )
 
 
-def parse_leaderboard_args(args):
+def parse_leaderboard_args(args, config):
     """Returns (start_date, end_date, title_string) or (None, None, 'Global Leaderboard (All-Time)') for all-time"""
     if not args:
         return None, None, "Global Leaderboard (All-Time)"
@@ -763,6 +763,11 @@ def parse_leaderboard_args(args):
     arg_str = " ".join(args).lower().strip()
     now_utc = datetime.now(timezone.utc).date()
     
+    if arg_str == "contest":
+        if config and config.get("contest_start") and config.get("contest_end"):
+            return config["contest_start"], config["contest_end"], "Contest Leaderboard"
+        return None, None, "Contest Leaderboard (No Dates Set)"
+        
     if arg_str in ["today", "day", "daily", "this day"]:
         return now_utc, now_utc, "Daily Leaderboard"
         
@@ -828,7 +833,7 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
     except Exception as e:
         logger.warning(f"Failed to delete /leaderboard message: {e}")
 
-    start_date, end_date, title = parse_leaderboard_args(context.args)
+    start_date, end_date, title = parse_leaderboard_args(context.args, config)
 
     # Fetch a wider net in case many are admins
     top_candidates = await db.get_leaderboard(limit=50, start_date=start_date, end_date=end_date)
@@ -1319,3 +1324,92 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
         text=f"🎯 **{safe_user_name}** stole `{STEAL_AMOUNT}` CXP from **{safe_target_name}**!",
         parse_mode="Markdown",
     )
+
+
+async def contest_cmd(update: Update, context: CallbackContext):
+    """Alias for /leaderboard contest."""
+    context.args = ["contest"]
+    await leaderboard_cmd(update, context)
+
+
+async def setcontest_cmd(update: Update, context: CallbackContext):
+    """Admin only: /setcontest <mm/dd/yy> <mm/dd/yy> OR <mm/dd/yy> <days> OR <days>. Set contest timeframe."""
+    if not update.effective_user or not update.message:
+        return
+
+    if (
+        getattr(update.effective_user, "is_bot", True)
+        and not update.message.sender_chat
+    ):
+        return
+
+    config = await db.get_config()
+    main_group_id = config.get("main_group_id") if config else None
+
+    # Determine actor identity
+    actor_id = update.effective_user.id
+    if getattr(update.effective_user, "is_bot", True) and update.message.sender_chat:
+        actor_id = update.message.sender_chat.id
+
+    if not await is_user_admin(actor_id, main_group_id, context):
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "Usage:\n`/setcontest <days>` (starts today, inclusive length)\n`/setcontest <mm/dd/yy> <days>`\n`/setcontest <mm/dd/yy> <mm/dd/yy>`",
+            parse_mode="Markdown",
+        )
+        return
+
+    now_utc = datetime.now(timezone.utc).date()
+    start_date = None
+    end_date = None
+
+    def parse_date(date_str):
+        try:
+            return datetime.strptime(date_str, "%m/%d/%y").date()
+        except ValueError:
+            return None
+
+    if len(args) == 1:
+        try:
+            days = int(args[0])
+            if days <= 0:
+                await update.message.reply_text("Days must be > 0.")
+                return
+            start_date = now_utc
+            end_date = start_date + timedelta(days=days-1)
+        except ValueError:
+            await update.message.reply_text("Invalid length in days.")
+            return
+    elif len(args) >= 2:
+        start_date = parse_date(args[0])
+        if not start_date:
+            await update.message.reply_text("Invalid start date format. Use mm/dd/yy.")
+            return
+            
+        try:
+            days = int(args[1])
+            if days <= 0:
+                await update.message.reply_text("Days must be > 0.")
+                return
+            end_date = start_date + timedelta(days=days-1)
+        except ValueError:
+            end_date = parse_date(args[1])
+            if not end_date:
+                await update.message.reply_text("Invalid end date or days format. Use mm/dd/yy or an integer.")
+                return
+
+    if start_date and end_date:
+        if end_date < start_date:
+            await update.message.reply_text("End date must be after or equal to the start date.")
+            return
+
+        success = await db.update_config(contest_start=start_date, contest_end=end_date)
+        if success:
+            await update.message.reply_text(f"✅ Contest timeframe set:\nStart: {start_date.strftime('%Y-%m-%d')}\nEnd: {end_date.strftime('%Y-%m-%d')}")
+        else:
+            await update.message.reply_text("❌ Failed to update the database.")
+    else:
+        await update.message.reply_text("Invalid arguments.")

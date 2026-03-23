@@ -22,6 +22,7 @@ from telegram.constants import ParseMode
 
 from database import db
 from handlers.owner_menu import get_config_conversation_handler
+from handlers.channel_admin import get_channel_admin_conversation, forward_channel_post, handle_post_action
 from handlers.verification import welcome_new_member, verify_user
 from handlers.service_cleaner import clean_service_messages
 from handlers.cxp import (
@@ -33,6 +34,8 @@ from handlers.cxp import (
     get_id_cmd,
     set_admin_cmd,
     steal_cxp_cmd,
+    setcontest_cmd,
+    contest_cmd,
 )
 from handlers.help import help_cmd, commands_cmd
 from handlers.translation import (
@@ -81,24 +84,26 @@ async def auth_middleware(update: Update, context) -> None:
 
     chat_type = update.effective_chat.type
 
-    if not BOT_OWNER_ID:
-        if chat_type == "private":
+    if chat_type == "private":
+        user_id = update.effective_user.id if update.effective_user else None
+        is_allowed = False
+        
+        if not BOT_OWNER_ID:
             if update.message:
-                await update.message.reply_text(
-                    "Owner ID is not configured in the bot's environment."
-                )
-        raise ApplicationHandlerStop()
-
-    if (
-        chat_type == "private"
-        and update.effective_user
-        and update.effective_user.id != BOT_OWNER_ID
-    ):
-        if update.message:
-            await update.message.reply_text(
-                "This bot does not provide any user facing functionality via direct message."
-            )
-        raise ApplicationHandlerStop()
+                await update.message.reply_text("Owner ID is not configured in the bot's environment.")
+            raise ApplicationHandlerStop()
+            
+        if user_id == BOT_OWNER_ID:
+            is_allowed = True
+        elif user_id:
+            db_user = await db.get_user(user_id)
+            if db_user and db_user.get("is_channel_admin"):
+                is_allowed = True
+                
+        if not is_allowed:
+            if update.message:
+                await update.message.reply_text("This bot does not provide any user facing functionality via direct message.")
+            raise ApplicationHandlerStop()
 
     if chat_type in ("group", "supergroup"):
         config = await db.get_config()
@@ -170,6 +175,9 @@ def main() -> None:
     application.add_handler(TypeHandler(Update, auth_middleware), group=-1)
 
     application.add_handler(get_config_conversation_handler())
+    application.add_handler(get_channel_admin_conversation())
+    application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^draft_"))
+    application.add_handler(MessageHandler(filters.ChatType.CHANNEL, forward_channel_post))
     application.add_handler(MessageHandler(filters.Regex(r"@admin"), admin_mention))
     application.add_handler(
         MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member)
@@ -197,6 +205,8 @@ def main() -> None:
     application.add_handler(CommandHandler("checkid", get_id_cmd))
     application.add_handler(CommandHandler("setadmin", set_admin_cmd))
     application.add_handler(CommandHandler("steal", steal_cxp_cmd))
+    application.add_handler(CommandHandler("setcontest", setcontest_cmd))
+    application.add_handler(CommandHandler("contest", contest_cmd))
 
     # Translation Handlers
     application.add_handler(CommandHandler("en", translate_en_cmd))
