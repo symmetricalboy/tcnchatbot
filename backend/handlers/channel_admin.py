@@ -179,13 +179,28 @@ async def handle_post_action(update: Update, context: CallbackContext):
         reply_markup = context.user_data.get('draft_reply_markup')
         
         try:
-            await context.bot.copy_message(
+            sent_msg = await context.bot.copy_message(
                 chat_id=channel_id,
                 from_chat_id=context.user_data['draft_chat_id'],
                 message_id=context.user_data['draft_message_id'],
                 reply_markup=reply_markup
             )
             await query.edit_message_text("✅ Message successfully posted to the channel!")
+            
+            # Manually forward the bot's newly created channel post to the configured topic
+            main_group_id = config.get("main_group_id")
+            forward_topic_id = config.get("channel_forward_topic_id")
+            if main_group_id and forward_topic_id:
+                try:
+                    await context.bot.forward_message(
+                        chat_id=main_group_id,
+                        from_chat_id=channel_id,
+                        message_id=sent_msg.message_id,
+                        message_thread_id=forward_topic_id
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to auto-forward drafted post: {e}")
+                    
         except Exception as e:
             logger.error(f"Failed to post to channel: {e}")
             await query.edit_message_text(f"❌ Failed to post message: {e}")
