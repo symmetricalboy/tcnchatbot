@@ -42,6 +42,9 @@ class Database:
                 );
                 
                 ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS cxp_topic_id BIGINT;
+                ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS channel_forward_topic_id BIGINT;
+                ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS contest_start DATE;
+                ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS contest_end DATE;
                 
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
@@ -54,6 +57,7 @@ class Database:
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(255);
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS is_channel_admin BOOLEAN DEFAULT FALSE;
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_steal_time TIMESTAMP;
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS location VARCHAR(255);
 
@@ -134,6 +138,9 @@ class Database:
             "admin_group_id",
             "welcome_message",
             "cxp_topic_id",
+            "channel_forward_topic_id",
+            "contest_start",
+            "contest_end",
         }
         updates = []
         values = []
@@ -263,6 +270,20 @@ class Database:
             return []
         async with self.pool.acquire() as conn:
             return await conn.fetch("SELECT * FROM users WHERE is_admin = TRUE")
+
+    async def update_user_channel_admin_status(self, user_id: int, is_channel_admin: bool):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET is_channel_admin = $2 WHERE user_id = $1", user_id, is_channel_admin
+            )
+
+    async def get_channel_admins(self):
+        if not self.pool:
+            return []
+        async with self.pool.acquire() as conn:
+            return await conn.fetch("SELECT * FROM users WHERE is_channel_admin = TRUE")
 
     async def update_user_cxp(self, user_id, delta_cxp, update_timestamp=False):
         if not self.pool:

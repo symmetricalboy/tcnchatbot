@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Define conversation states
 MAIN_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL, CXP_TOPIC = range(4)
 # Additional states for individual edits
-EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME, EDIT_CXP = range(4, 9)
+EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME, EDIT_CXP, EDIT_CHANNEL_FWD, ADD_CHANNEL_ADMIN, REMOVE_CHANNEL_ADMIN = range(4, 12)
 
 
 async def _extract_topic_id(message) -> int | None:
@@ -109,7 +109,9 @@ async def start(update: Update, context: CallbackContext) -> int:
     else:
         # Show main owner menu
         keyboard = [
-            [InlineKeyboardButton("⚙️ Group & Channel", callback_data="group_menu")]
+            [InlineKeyboardButton("⚙️ Group & Channel", callback_data="group_menu")],
+            [InlineKeyboardButton("👥 Manage Channel Admins", callback_data="manage_channel_admins")],
+            [InlineKeyboardButton("📝 Draft Channel Post", callback_data="start_drafting")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -135,6 +137,7 @@ async def group_menu(update: Update, context: CallbackContext) -> int:
         [InlineKeyboardButton("🔄 Change Admin Group", callback_data="edit_admin")],
         [InlineKeyboardButton("💬 Edit Welcome Msg", callback_data="edit_welcome")],
         [InlineKeyboardButton("🎯 Edit CXP Topic", callback_data="edit_cxp")],
+        [InlineKeyboardButton("⚙️ Edit Channel Fwd Topic", callback_data="edit_channel_fwd")],
         [InlineKeyboardButton("🛡️ Check Permissions", callback_data="check_perms")],
         [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")],
     ]
@@ -154,7 +157,11 @@ async def back_to_main(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
 
-    keyboard = [[InlineKeyboardButton("⚙️ Group & Channel", callback_data="group_menu")]]
+    keyboard = [
+        [InlineKeyboardButton("⚙️ Group & Channel", callback_data="group_menu")],
+        [InlineKeyboardButton("👥 Manage Channel Admins", callback_data="manage_channel_admins")],
+        [InlineKeyboardButton("📝 Draft Channel Post", callback_data="start_drafting")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     welcome_text = (
@@ -607,6 +614,124 @@ async def save_edit_cxp(update: Update, context: CallbackContext) -> int:
 # Note: Additional edit states and check_perms will be implemented in subsequent functions.
 
 
+async def prompt_edit_channel_fwd(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.reply_text(
+        "📝 **Change Channel Forward Topic**\n\n"
+        "Please send me the link to your **Channel Forward Dedicated Topic**, or forward a message from it.\n\n"
+        "*(Type /restart to cancel this edit and return to the main menu)*",
+        parse_mode="Markdown",
+    )
+    return EDIT_CHANNEL_FWD
+
+async def save_edit_channel_fwd(update: Update, context: CallbackContext) -> int:
+    topic_id = await _extract_topic_id(update.message)
+    if topic_id is None:
+        await update.message.reply_text("Could not extract a Topic ID. Please send a valid topic link or forward a message.")
+        return EDIT_CHANNEL_FWD
+
+    try:
+        success = await db.update_config(channel_forward_topic_id=topic_id)
+        if not success:
+            raise Exception("Database update failed.")
+        await update.message.reply_text(f"✅ Channel Forward Topic updated successfully (ID: `{topic_id}`).", parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Failed to update Channel Forward Topic ID: {e}")
+        await update.message.reply_text(f"Database update failed: {e}")
+
+    return await start(update, context)
+
+async def manage_channel_admins(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    admins = await db.get_channel_admins()
+    admin_list = "\n".join([f"- {a['display_name'] or a['username']} (`{a['user_id']}`)" for a in admins])
+    if not admin_list:
+        admin_list = "No channel admins configured yet."
+
+    keyboard = [
+        [InlineKeyboardButton("➕ Add Channel Admin", callback_data="add_channel_admin")],
+        [InlineKeyboardButton("➖ Remove Channel Admin", callback_data="remove_channel_admin")],
+        [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")],
+    ]
+    
+    await query.edit_message_text(
+        f"👥 **Manage Channel Admins**\n\n"
+        f"Current Channel Admins:\n{admin_list}\n\n"
+        f"Select an action below.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+async def prompt_add_channel_admin(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.reply_text(
+        "➕ **Add Channel Admin**\n\n"
+        "Please send me the **@username** or forward a message from the user you want to add.\n"
+        "The user must have interacted with the bot in a group or DM before.\n\n"
+        "*(Type /restart to cancel)*",
+        parse_mode="Markdown",
+    )
+    return ADD_CHANNEL_ADMIN
+
+async def save_add_channel_admin(update: Update, context: CallbackContext) -> int:
+    if update.message.forward_origin:
+        if update.message.forward_origin.type == "user":
+            user_id = update.message.forward_origin.sender_user.id
+            db_user = await db.get_user(user_id)
+            if not db_user:
+                await update.message.reply_text("This user has not interacted with me yet. Cannot add them.")
+                return ADD_CHANNEL_ADMIN
+        else:
+             await update.message.reply_text("Could not determine user from forward. Please try a direct forward or username.")
+             return ADD_CHANNEL_ADMIN
+    else:
+        username = update.message.text.strip()
+        db_user = await db.get_user_by_username(username)
+        if not db_user:
+            await update.message.reply_text("Could not find this user in the database.")
+            return ADD_CHANNEL_ADMIN
+        user_id = db_user["user_id"]
+
+    await db.update_user_channel_admin_status(user_id, True)
+    await update.message.reply_text(f"✅ Added `{db_user.get('display_name', db_user.get('username'))}` as a Channel Admin.", parse_mode="Markdown")
+    return await start(update, context)
+
+async def prompt_remove_channel_admin(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.reply_text(
+        "➖ **Remove Channel Admin**\n\n"
+        "Please send me the **@username** or numeric ID of the user you want to remove.\n\n"
+        "*(Type /restart to cancel)*",
+        parse_mode="Markdown",
+    )
+    return REMOVE_CHANNEL_ADMIN
+
+async def save_remove_channel_admin(update: Update, context: CallbackContext) -> int:
+    input_str = update.message.text.strip()
+    try:
+        user_id = int(input_str)
+        db_user = await db.get_user(user_id)
+    except ValueError:
+        db_user = await db.get_user_by_username(input_str)
+        
+    if not db_user:
+        await update.message.reply_text("Could not find this user in the database.")
+        return REMOVE_CHANNEL_ADMIN
+
+    user_id = db_user["user_id"]
+    await db.update_user_channel_admin_status(user_id, False)
+    await update.message.reply_text(f"✅ Removed `{db_user.get('display_name', db_user.get('username'))}` from Channel Admins.", parse_mode="Markdown")
+    return await start(update, context)
+
 def get_config_conversation_handler() -> ConversationHandler:
     warnings.filterwarnings("ignore", category=PTBUserWarning)
     return ConversationHandler(
@@ -615,11 +740,15 @@ def get_config_conversation_handler() -> ConversationHandler:
             CallbackQueryHandler(group_menu, pattern="^group_menu$"),
             CallbackQueryHandler(back_to_main, pattern="^back_main$"),
             CallbackQueryHandler(check_permissions, pattern="^check_perms$"),
+            CallbackQueryHandler(manage_channel_admins, pattern="^manage_channel_admins$"),
+            CallbackQueryHandler(prompt_add_channel_admin, pattern="^add_channel_admin$"),
+            CallbackQueryHandler(prompt_remove_channel_admin, pattern="^remove_channel_admin$"),
             CallbackQueryHandler(prompt_edit_main, pattern="^edit_main$"),
             CallbackQueryHandler(prompt_edit_channel, pattern="^edit_channel$"),
             CallbackQueryHandler(prompt_edit_admin, pattern="^edit_admin$"),
             CallbackQueryHandler(prompt_edit_welcome, pattern="^edit_welcome$"),
             CallbackQueryHandler(prompt_edit_cxp, pattern="^edit_cxp$"),
+            CallbackQueryHandler(prompt_edit_channel_fwd, pattern="^edit_channel_fwd$"),
         ],
         states={
             MAIN_GROUP: [
@@ -645,6 +774,9 @@ def get_config_conversation_handler() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_welcome)
             ],
             EDIT_CXP: [MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_cxp)],
+            EDIT_CHANNEL_FWD: [MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_channel_fwd)],
+            ADD_CHANNEL_ADMIN: [MessageHandler(filters.ALL & ~filters.COMMAND, save_add_channel_admin)],
+            REMOVE_CHANNEL_ADMIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_remove_channel_admin)],
         },
         fallbacks=[CommandHandler("restart", restart)],
         per_message=False,
