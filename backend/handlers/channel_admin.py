@@ -65,6 +65,7 @@ async def receive_post(update: Update, context: CallbackContext) -> int:
     # Store message id and chat id to copy it later
     context.user_data['draft_message_id'] = message.message_id
     context.user_data['draft_chat_id'] = message.chat_id
+    context.user_data['draft_message'] = message
 
     await message.reply_text(
         "✅ **Post content received.**\n\n"
@@ -156,6 +157,74 @@ async def receive_buttons(update: Update, context: CallbackContext) -> int:
         context.user_data.clear()
         return ConversationHandler.END
 
+async def send_message_with_entities(bot, chat_id, message: Message, reply_markup):
+    """
+    Manually sends a message instead of using copy_message.
+    This preserves custom emojis when sending to a channel, as copy_message
+    strips them out natively on Telegram's side.
+    """
+    kwargs = {
+        'chat_id': chat_id,
+        'reply_markup': reply_markup,
+    }
+    
+    if message.text:
+        return await bot.send_message(
+            text=message.text,
+            entities=message.entities,
+            **kwargs
+        )
+    elif message.photo:
+        return await bot.send_photo(
+            photo=message.photo[-1].file_id,
+            caption=message.caption,
+            caption_entities=message.caption_entities,
+            **kwargs
+        )
+    elif message.video:
+        return await bot.send_video(
+            video=message.video.file_id,
+            caption=message.caption,
+            caption_entities=message.caption_entities,
+            **kwargs
+        )
+    elif message.animation:
+        return await bot.send_animation(
+            animation=message.animation.file_id,
+            caption=message.caption,
+            caption_entities=message.caption_entities,
+            **kwargs
+        )
+    elif message.document:
+        return await bot.send_document(
+            document=message.document.file_id,
+            caption=message.caption,
+            caption_entities=message.caption_entities,
+            **kwargs
+        )
+    elif message.audio:
+        return await bot.send_audio(
+            audio=message.audio.file_id,
+            caption=message.caption,
+            caption_entities=message.caption_entities,
+            **kwargs
+        )
+    elif message.voice:
+        return await bot.send_voice(
+            voice=message.voice.file_id,
+            caption=message.caption,
+            caption_entities=message.caption_entities,
+            **kwargs
+        )
+    else:
+        # Fallback to copy_message for unsupported types
+        return await bot.copy_message(
+            chat_id=chat_id,
+            from_chat_id=message.chat_id,
+            message_id=message.message_id,
+            reply_markup=reply_markup
+        )
+
 async def handle_post_action(update: Update, context: CallbackContext):
     """Handle Start Over or Post Message callbacks."""
     query = update.callback_query
@@ -179,12 +248,18 @@ async def handle_post_action(update: Update, context: CallbackContext):
         reply_markup = context.user_data.get('draft_reply_markup')
         
         try:
-            sent_msg = await context.bot.copy_message(
-                chat_id=channel_id,
-                from_chat_id=context.user_data['draft_chat_id'],
-                message_id=context.user_data['draft_message_id'],
-                reply_markup=reply_markup
-            )
+            draft_message = context.user_data.get('draft_message')
+            
+            if draft_message:
+                sent_msg = await send_message_with_entities(context.bot, channel_id, draft_message, reply_markup)
+            else:
+                sent_msg = await context.bot.copy_message(
+                    chat_id=channel_id,
+                    from_chat_id=context.user_data['draft_chat_id'],
+                    message_id=context.user_data['draft_message_id'],
+                    reply_markup=reply_markup
+                )
+                
             await query.edit_message_text("✅ Message successfully posted to the channel!")
             
             # Manually forward the bot's newly created channel post to the configured topic
