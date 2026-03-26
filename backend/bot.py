@@ -36,6 +36,7 @@ from handlers.cxp import (
     steal_cxp_cmd,
     setcontest_cmd,
     contest_cmd,
+    syncperms_cmd,
 )
 from handlers.help import help_cmd, commands_cmd
 from handlers.translation import (
@@ -207,6 +208,7 @@ def main() -> None:
     application.add_handler(CommandHandler("steal", steal_cxp_cmd))
     application.add_handler(CommandHandler("setcontest", setcontest_cmd))
     application.add_handler(CommandHandler("contest", contest_cmd))
+    application.add_handler(CommandHandler("syncperms", syncperms_cmd))
 
     # Translation Handlers
     application.add_handler(CommandHandler("en", translate_en_cmd))
