@@ -81,6 +81,25 @@ async def start(update: Update, context: CallbackContext) -> int:
     if update.effective_chat.type != "private":
         return ConversationHandler.END
 
+    if context.args and context.args[0] == "setchannel":
+        from handlers.channel_link import set_channel_cmd
+        await set_channel_cmd(update, context)
+        return ConversationHandler.END
+
+    # Check owner/admin status securely
+    import os
+    bot_owner_id_str = os.getenv("BOT_OWNER_ID")
+    bot_owner_id = int(bot_owner_id_str) if bot_owner_id_str else None
+    user_id = update.effective_user.id
+    is_allowed = (user_id == bot_owner_id)
+    if not is_allowed:
+        db_user = await db.get_user(user_id)
+        if db_user and db_user.get("is_channel_admin"):
+            is_allowed = True
+    if not is_allowed:
+        await update.message.reply_text("You are not authorized to access the owner menu.")
+        return ConversationHandler.END
+
     # Check database status
     config = await db.get_config()
     is_configured = False

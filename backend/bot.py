@@ -106,7 +106,7 @@ async def auth_middleware(update: Update, context) -> None:
         if not is_allowed:
             # Check if attempting to run an allowed user-facing command
             message_text = update.message.text.lower() if update.message and update.message.text else ""
-            if message_text.startswith("/start") or message_text.startswith("/setchannel"):
+            if message_text.startswith("/start setchannel") or message_text.startswith("/setchannel"):
                 # We allow users to use the bot in DM for channel linking
                 pass
             else:
@@ -155,15 +155,6 @@ async def admin_mention(update: Update, context) -> None:
             parse_mode=ParseMode.HTML,
             reply_to_message_id=update.message.message_id,
         )
-
-
-async def start_cmd(update: Update, context) -> None:
-    """Handle /start command, especially for deep linking."""
-    if context.args and context.args[0] == "setchannel":
-        await set_channel_cmd(update, context)
-        return
-    if update.effective_chat.type == "private":
-        await update.message.reply_text("Welcome to The Clean Network Bot!")
 
 
 async def post_init(application: Application) -> None:
@@ -255,9 +246,8 @@ def main() -> None:
     # Ping Feature
     application.add_handler(CommandHandler("ping", ping_cmd))
 
-    # Channel Claiming / Start
+    # Channel Claiming
     application.add_handler(CommandHandler("setchannel", set_channel_cmd))
-    application.add_handler(CommandHandler("start", start_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))
