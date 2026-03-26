@@ -146,28 +146,13 @@ async def verify_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await query.answer()
         return
 
-    # Unrestrict user to defaults
+    # Unrestrict user to their current level permissions
+    from handlers.cxp import apply_level_permissions, calculate_level
     try:
-        await context.bot.restrict_chat_member(
-            chat_id=chat_id,
-            user_id=target_user_id,
-            permissions=ChatPermissions(
-                can_send_messages=True,
-                can_send_audios=True,
-                can_send_documents=True,
-                can_send_photos=True,
-                can_send_videos=True,
-                can_send_video_notes=True,
-                can_send_voice_notes=True,
-                can_send_polls=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True,
-                can_change_info=False,
-                can_invite_users=True,
-                can_pin_messages=False,
-                can_manage_topics=False,
-            ),
-        )
+        user_data = await db.get_user(target_user_id)
+        cxp = user_data.get("cxp", 0) if user_data else 0
+        level = calculate_level(cxp)
+        await apply_level_permissions(context.bot, chat_id, target_user_id, level)
     except Exception as e:
         logger.error(f"Failed to unrestrict user: {e}")
 
