@@ -56,6 +56,7 @@ from handlers.moderation import mute_cmd, unmute_cmd, kick_cmd, ban_cmd
 from handlers.ai_chat import ask_cmd
 from handlers.time import time_cmd, settime_cmd
 from handlers.ping import ping_cmd
+from handlers.channel_link import set_channel_cmd
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
 warnings.filterwarnings(
@@ -150,6 +151,15 @@ async def admin_mention(update: Update, context) -> None:
         )
 
 
+async def start_cmd(update: Update, context) -> None:
+    """Handle /start command, especially for deep linking."""
+    if context.args and context.args[0] == "setchannel":
+        await set_channel_cmd(update, context)
+        return
+    if update.effective_chat.type == "private":
+        await update.message.reply_text("Welcome to The Clean Network Bot!")
+
+
 async def post_init(application: Application) -> None:
     """Initialize resources after the bot starts."""
     # DB initialization moved to explicit call in orchestrator loop
@@ -238,6 +248,10 @@ def main() -> None:
 
     # Ping Feature
     application.add_handler(CommandHandler("ping", ping_cmd))
+
+    # Channel Claiming / Start
+    application.add_handler(CommandHandler("setchannel", set_channel_cmd))
+    application.add_handler(CommandHandler("start", start_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))

@@ -199,6 +199,7 @@ class MemoryCache:
 
 MESSAGE_AUTHOR_CACHE = MemoryCache(5000)
 RATE_LIMIT_CACHE = MemoryCache(5000)
+UNLINKED_WARNING_CACHE = MemoryCache(5000)
 
 MESSAGE_CXP = 50
 POSITIVE_REACTION_BASE = 50
@@ -413,18 +414,71 @@ async def track_message_activity(update: Update, context: CallbackContext):
         if not update.message.sender_chat:
             return
 
-        user_id = update.message.sender_chat.id
+        chat_source = update.message.sender_chat
+        channel_id = chat_source.id
 
-        # We need a fallback object to pass into _process_db_message_and_cxp
-        # We can construct a simple mocked user object with id, username, first_name
-        class MockUser:
-            def __init__(self, chat):
-                self.id = chat.id
-                self.username = chat.username
-                self.first_name = chat.title or chat.username or f"Channel {chat.id}"
-                self.is_bot = False
-
-        user_obj = MockUser(update.message.sender_chat)
+        if getattr(chat_source, "type", "") == "channel":
+            owner_id = await db.get_channel_owner(channel_id)
+            if owner_id:
+                user_id = owner_id
+                db_user = await db.get_user(owner_id)
+                
+                class MockUser:
+                    def __init__(self):
+                        self.id = owner_id
+                        self.username = db_user.get("username") if db_user else None
+                        self.first_name = db_user.get("display_name") if db_user else f"Owner {owner_id}"
+                        self.last_name = None
+                        self.is_bot = False
+                        
+                user_obj = MockUser()
+            else:
+                user_id = channel_id
+                class MockUser:
+                    def __init__(self, chat):
+                        self.id = chat.id
+                        self.username = chat.username
+                        self.first_name = chat.title or chat.username or f"Channel {chat.id}"
+                        self.last_name = None
+                        self.is_bot = False
+                user_obj = MockUser(chat_source)
+                
+                # Setup warning for unlinked channels
+                now = datetime.now()
+                last_warn = UNLINKED_WARNING_CACHE.get(channel_id)
+                if not last_warn or (now - last_warn).total_seconds() > 3600:
+                    UNLINKED_WARNING_CACHE.put(channel_id, now)
+                    try:
+                        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+                        bot_username = context.bot.username
+                        keyboard = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🔗 Link Channel", url=f"https://t.me/{bot_username}?start=setchannel")]
+                        ])
+                        msg = await update.message.reply_text(
+                            f"⚠️ *Unlinked Channel Warning*\n\n"
+                            f"You are posting as a channel that is not linked to your user account. This means you will not earn CXP and your user-level permissions will not apply.\n\n"
+                            f"Please click the button below to link it.",
+                            reply_markup=keyboard,
+                            parse_mode="Markdown"
+                        )
+                        context.job_queue.run_once(
+                            _delete_message_job,
+                            60,
+                            data={"chat_id": msg.chat_id, "message_id": msg.message_id}
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send unlinked channel warning: {e}")
+        else:
+            # Anonymous admin group
+            user_id = channel_id
+            class MockUser:
+                def __init__(self, chat):
+                    self.id = chat.id
+                    self.username = chat.username
+                    self.first_name = chat.title or chat.username or f"Channel {chat.id}"
+                    self.last_name = None
+                    self.is_bot = False
+            user_obj = MockUser(chat_source)
     else:
         user_id = update.effective_user.id
         user_obj = update.effective_user
@@ -543,6 +597,12 @@ async def evaluate_reaction(update: Update, context: CallbackContext):
         reactor_id = reaction_update.user.id
     elif reaction_update.actor_chat:
         reactor_id = reaction_update.actor_chat.id
+        
+        # Check if the reactor chat is a linked channel
+        if getattr(reaction_update.actor_chat, "type", "") == "channel":
+            owner_id = await db.get_channel_owner(reactor_id)
+            if owner_id:
+                reactor_id = owner_id
 
     if not reactor_id:
         return
@@ -710,6 +770,13 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
             or update.message.sender_chat.username
             or f"Channel {target_id}"
         )
+        if getattr(update.message.sender_chat, "type", "") == "channel":
+            owner_id = await db.get_channel_owner(target_id)
+            if owner_id:
+                target_id = owner_id
+                db_user = await db.get_user(owner_id)
+                owner_name = db_user.get("display_name") if db_user else f"Owner {owner_id}"
+                target_name = f"{owner_name} (via {update.message.sender_chat.title})"
     else:
         target_id = update.effective_user.id
         target_name = update.effective_user.first_name + (
@@ -744,6 +811,13 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
         target_name = (
             target_chat.title or target_chat.username or f"Channel {target_id}"
         )
+        if getattr(target_chat, "type", "") == "channel":
+            owner_id = await db.get_channel_owner(target_id)
+            if owner_id:
+                target_id = owner_id
+                db_user = await db.get_user(owner_id)
+                owner_name = db_user.get("display_name") if db_user else f"Owner {owner_id}"
+                target_name = f"{owner_name} (via {target_chat.title})"
     elif target_user and not getattr(target_user, "is_bot", False):
         target_id = target_user.id
         target_name = target_user.first_name

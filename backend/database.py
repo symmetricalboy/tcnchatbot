@@ -100,6 +100,12 @@ class Database:
                     PRIMARY KEY (user_id, date)
                 );
                 
+                CREATE TABLE IF NOT EXISTS channel_links (
+                    channel_id BIGINT PRIMARY KEY,
+                    user_id BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
                 INSERT INTO bot_config (id, welcome_message) 
                 VALUES (1, 'Welcome {mention}!\n\n📜 Community Rules:\n- Be polite and respectful\n- No spam or unwanted advertising\n- Follow moderator instructions\n- Please use the appropriate topics for your discussions\n\n🎮 Enjoy your time in The Clean Network Community!') 
                 ON CONFLICT (id) DO NOTHING;
@@ -469,6 +475,44 @@ class Database:
                 "SELECT original_message_id, author_id, author_name FROM translated_messages WHERE chat_id = $1 AND message_id = $2",
                 chat_id,
                 message_id,
+            )
+
+    async def link_channel(self, channel_id: int, user_id: int):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO channel_links (channel_id, user_id) 
+                VALUES ($1, $2) 
+                ON CONFLICT (channel_id) DO UPDATE SET user_id = EXCLUDED.user_id
+                """,
+                channel_id,
+                user_id,
+            )
+
+    async def get_channel_owner(self, channel_id: int):
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT user_id FROM channel_links WHERE channel_id = $1", channel_id
+            )
+
+    async def get_user_channels(self, user_id: int):
+        if not self.pool:
+            return []
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                "SELECT channel_id FROM channel_links WHERE user_id = $1", user_id
+            )
+
+    async def unlink_channel(self, channel_id: int):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM channel_links WHERE channel_id = $1", channel_id
             )
 
 
