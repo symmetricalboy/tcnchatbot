@@ -61,6 +61,8 @@ async def commands_cmd(update: Update, context: CallbackContext):
         "  *Syntax:* `/time <location>` or `/time @username`\n\n"
         "• `/settime` — Set your own local time zone/location.\n"
         "  *Syntax:* `/settime <location>`\n\n"
+        "• `/ping` — Check bot response latency and connection method.\n"
+        "  *Syntax:* `/ping`\n\n"
         "**Translation Commands:**\n"
         "Start a message with or reply to a message with one of the following commands to translate it:\n"
         "`/en` (English), `/es` (Spanish), `/fr` (French),\n"

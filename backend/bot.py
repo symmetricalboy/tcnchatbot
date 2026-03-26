@@ -55,6 +55,7 @@ from handlers.translation import (
 from handlers.moderation import mute_cmd, unmute_cmd, kick_cmd, ban_cmd
 from handlers.ai_chat import ask_cmd
 from handlers.time import time_cmd, settime_cmd
+from handlers.ping import ping_cmd
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
 warnings.filterwarnings(
@@ -234,6 +235,9 @@ def main() -> None:
     # Time Features
     application.add_handler(CommandHandler("time", time_cmd))
     application.add_handler(CommandHandler("settime", settime_cmd))
+
+    # Ping Feature
+    application.add_handler(CommandHandler("ping", ping_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))
