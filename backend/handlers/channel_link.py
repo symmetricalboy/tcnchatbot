@@ -84,8 +84,11 @@ async def set_channel_cmd(update: Update, context: CallbackContext):
         del temp_auth_codes[code]
         
         # Announce
-        await update.message.reply_text(
-            f"✅ *Success!*\n\nThe channel *{channel_title}* has been successfully linked to your user account.\n"
+        thread_id = update.message.message_thread_id if update.message.is_topic_message else None
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            message_thread_id=thread_id,
+            text=f"✅ *Success!*\n\nThe channel *{channel_title}* has been successfully linked to your user account.\n"
             f"All CXP earned by this channel will now be credited to you, and your permissions will apply.",
             parse_mode="Markdown"
         )

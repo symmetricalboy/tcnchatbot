@@ -104,9 +104,15 @@ async def auth_middleware(update: Update, context) -> None:
                 is_allowed = True
                 
         if not is_allowed:
-            if update.message:
-                await update.message.reply_text("This bot does not provide any user facing functionality via direct message.")
-            raise ApplicationHandlerStop()
+            # Check if attempting to run an allowed user-facing command
+            message_text = update.message.text.lower() if update.message and update.message.text else ""
+            if message_text.startswith("/start") or message_text.startswith("/setchannel"):
+                # We allow users to use the bot in DM for channel linking
+                pass
+            else:
+                if update.message:
+                    await update.message.reply_text("This bot does not provide any user facing functionality via direct message except for linking channels.")
+                raise ApplicationHandlerStop()
 
     if chat_type in ("group", "supergroup"):
         config = await db.get_config()

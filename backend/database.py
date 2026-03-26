@@ -343,7 +343,8 @@ class Database:
                            COALESCE(SUM(d.cxp_gained), 0) AS cxp
                     FROM users u
                     JOIN user_daily_cxp d ON u.user_id = d.user_id
-                    WHERE d.date >= $1 AND d.date <= $2
+                    LEFT JOIN channel_links cl ON u.user_id = cl.channel_id
+                    WHERE d.date >= $1 AND d.date <= $2 AND cl.channel_id IS NULL
                     GROUP BY u.user_id, u.is_admin, u.display_name, u.username, u.cxp
                     HAVING COALESCE(SUM(d.cxp_gained), 0) > 0
                     ORDER BY cxp DESC
@@ -353,7 +354,12 @@ class Database:
                 )
             else:
                 return await conn.fetch(
-                    "SELECT * FROM users ORDER BY cxp DESC LIMIT $1", limit
+                    """
+                    SELECT u.* FROM users u 
+                    LEFT JOIN channel_links cl ON u.user_id = cl.channel_id 
+                    WHERE cl.channel_id IS NULL 
+                    ORDER BY u.cxp DESC LIMIT $1
+                    """, limit
                 )
 
     async def record_message(self, chat_id, message_id, user_id):
@@ -481,15 +487,25 @@ class Database:
         if not self.pool:
             return
         async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO channel_links (channel_id, user_id) 
-                VALUES ($1, $2) 
-                ON CONFLICT (channel_id) DO UPDATE SET user_id = EXCLUDED.user_id
-                """,
-                channel_id,
-                user_id,
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO channel_links (channel_id, user_id) 
+                    VALUES ($1, $2) 
+                    ON CONFLICT (channel_id) DO UPDATE SET user_id = EXCLUDED.user_id
+                    """,
+                    channel_id,
+                    user_id,
+                )
+                
+                # Check if channel had existing CXP
+                channel_data = await conn.fetchrow("SELECT cxp FROM users WHERE user_id = $1", channel_id)
+                if channel_data and channel_data["cxp"] > 0:
+                    channel_cxp = channel_data["cxp"]
+                    # Add to user
+                    await conn.execute("UPDATE users SET cxp = cxp + $2 WHERE user_id = $1", user_id, channel_cxp)
+                    # Reset channel cxp
+                    await conn.execute("UPDATE users SET cxp = 0 WHERE user_id = $1", channel_id)
 
     async def get_channel_owner(self, channel_id: int):
         if not self.pool:
