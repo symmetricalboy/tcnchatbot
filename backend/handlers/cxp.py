@@ -231,7 +231,7 @@ async def apply_level_permissions(bot, chat_id: int, user_id: int, level: int):
         can_manage_topics=False,
     )
     try:
-        await bot.restrict_chat_member(chat_id, user_id, permissions)
+        await bot.restrict_chat_member(chat_id, user_id, permissions, use_independent_chat_permissions=True)
     except error.RetryAfter:
         raise
     except Exception as e:
@@ -457,8 +457,14 @@ async def track_message_activity(update: Update, context: CallbackContext):
                 import html
                 first_name_esc = html.escape(getattr(user_obj, "first_name", f"User {user_id}"))
                 mention = f'<a href="tg://user?id={user_id}">{first_name_esc}</a>'
+                
+                thread_id = update.message.message_thread_id
+                if update.effective_chat and update.effective_chat.is_forum and thread_id is None:
+                    thread_id = 1
+                    
                 msg = await context.bot.send_message(
                     chat_id=chat_id,
+                    message_thread_id=thread_id,
                     text=f"🚫 {mention}, you cannot send links until you reach level 5.",
                     parse_mode="HTML"
                 )
@@ -1164,6 +1170,9 @@ async def give_cxp_cmd(update: Update, context: CallbackContext):
         context.application.create_task(
             _update_member_tag(context.bot, target_id, new_level)
         )
+        context.application.create_task(
+            apply_level_permissions(context.bot, main_group_id, target_id, new_level)
+        )
 
     action = "granted" if delta_cxp > 0 else "removed"
     msg = f"✅ Successfully {action} {abs(delta_cxp):,} CXP to {target_name}. Their new total is {new_cxp:,} CXP (Level {new_level})."
@@ -1370,6 +1379,9 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
         context.application.create_task(
             _update_member_tag(context.bot, target_id, target_new_level)
         )
+        context.application.create_task(
+            apply_level_permissions(context.bot, main_group_id, target_id, target_new_level)
+        )
 
     # Add to sender
     await db.update_user_cxp(user_id, STEAL_AMOUNT)
@@ -1378,6 +1390,9 @@ async def steal_cxp_cmd(update: Update, context: CallbackContext):
     if user_new_level != user_old_level:
         context.application.create_task(
             _update_member_tag(context.bot, user_id, user_new_level)
+        )
+        context.application.create_task(
+            apply_level_permissions(context.bot, main_group_id, user_id, user_new_level)
         )
 
     # Update cooldown
