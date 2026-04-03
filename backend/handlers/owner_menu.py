@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 MAIN_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL, CXP_TOPIC = range(4)
 # Additional states for individual edits
 EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME, EDIT_CXP, EDIT_CHANNEL_FWD, ADD_CHANNEL_ADMIN, REMOVE_CHANNEL_ADMIN, EDIT_RULES = range(4, 13)
+MANAGE_BLACKLIST, ADD_BLACKLIST, REMOVE_BLACKLIST = range(13, 16)
 
 
 async def _extract_topic_id(message) -> int | None:
@@ -130,6 +131,7 @@ async def start(update: Update, context: CallbackContext) -> int:
         keyboard = [
             [InlineKeyboardButton("⚙️ Group & Channel", callback_data="group_menu")],
             [InlineKeyboardButton("👥 Manage Channel Admins", callback_data="manage_channel_admins")],
+            [InlineKeyboardButton("🛑 Manage Blacklist", callback_data="manage_blacklist")],
             [InlineKeyboardButton("📝 Draft Channel Post", callback_data="start_drafting")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -180,6 +182,7 @@ async def back_to_main(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [InlineKeyboardButton("⚙️ Group & Channel", callback_data="group_menu")],
         [InlineKeyboardButton("👥 Manage Channel Admins", callback_data="manage_channel_admins")],
+        [InlineKeyboardButton("🛑 Manage Blacklist", callback_data="manage_blacklist")],
         [InlineKeyboardButton("📝 Draft Channel Post", callback_data="start_drafting")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -797,6 +800,96 @@ async def save_remove_channel_admin(update: Update, context: CallbackContext) ->
     await update.message.reply_text(f"✅ Removed `{db_user.get('display_name', db_user.get('username'))}` from Channel Admins.", parse_mode="Markdown")
     return await start(update, context)
 
+async def manage_blacklist(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    blacklisted = await db.get_blacklisted_users()
+    blacklisted_list = "\n".join([f"- {u['display_name'] or u['username']} (`{u['user_id']}`)" for u in blacklisted])
+    if not blacklisted_list:
+        blacklisted_list = "No users are currently blacklisted."
+
+    keyboard = [
+        [InlineKeyboardButton("➕ Add to Blacklist", callback_data="add_blacklist")],
+        [InlineKeyboardButton("➖ Remove from Blacklist", callback_data="remove_blacklist")],
+        [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")],
+    ]
+    
+    await query.edit_message_text(
+        f"🛑 **Manage Leaderboard Blacklist**\n\n"
+        f"Blacklisted users earn CXP but are hidden from leaderboards and shown as 'Unranked'.\n\n"
+        f"Current Blacklisted Users:\n{blacklisted_list}\n\n"
+        f"Select an action below.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+async def prompt_add_blacklist(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.reply_text(
+        "➕ **Add to Blacklist**\n\n"
+        "Please send me the **@username** or forward a message from the user you want to blacklist.\n"
+        "The user must have interacted with the bot in a group or DM before.\n\n"
+        "*(Type /restart to cancel)*",
+        parse_mode="Markdown",
+    )
+    return ADD_BLACKLIST
+
+async def save_add_blacklist(update: Update, context: CallbackContext) -> int:
+    if update.message.forward_origin:
+        if update.message.forward_origin.type == "user":
+            user_id = update.message.forward_origin.sender_user.id
+            db_user = await db.get_user(user_id)
+            if not db_user:
+                await update.message.reply_text("This user has not interacted with me yet. Cannot add them.")
+                return ADD_BLACKLIST
+        else:
+             await update.message.reply_text("Could not determine user from forward. Please try a direct forward or username.")
+             return ADD_BLACKLIST
+    else:
+        username = update.message.text.strip()
+        db_user = await db.get_user_by_username(username)
+        if not db_user:
+            await update.message.reply_text("Could not find this user in the database.")
+            return ADD_BLACKLIST
+        user_id = db_user["user_id"]
+
+    await db.update_user_blacklist_status(user_id, True)
+    await update.message.reply_text(f"✅ Added `{db_user.get('display_name', db_user.get('username'))}` to the leaderboard blacklist.", parse_mode="Markdown")
+    return await start(update, context)
+
+async def prompt_remove_blacklist(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.reply_text(
+        "➖ **Remove from Blacklist**\n\n"
+        "Please send me the **@username** or numeric ID of the user you want to remove.\n\n"
+        "*(Type /restart to cancel)*",
+        parse_mode="Markdown",
+    )
+    return REMOVE_BLACKLIST
+
+async def save_remove_blacklist(update: Update, context: CallbackContext) -> int:
+    input_str = update.message.text.strip()
+    try:
+        user_id = int(input_str)
+        db_user = await db.get_user(user_id)
+    except ValueError:
+        db_user = await db.get_user_by_username(input_str)
+        
+    if not db_user:
+        await update.message.reply_text("Could not find this user in the database.")
+        return REMOVE_BLACKLIST
+
+    user_id = db_user["user_id"]
+    await db.update_user_blacklist_status(user_id, False)
+    await update.message.reply_text(f"✅ Removed `{db_user.get('display_name', db_user.get('username'))}` from the leaderboard blacklist.", parse_mode="Markdown")
+    return await start(update, context)
+
 def get_config_conversation_handler() -> ConversationHandler:
     warnings.filterwarnings("ignore", category=PTBUserWarning)
     return ConversationHandler(
@@ -815,6 +908,9 @@ def get_config_conversation_handler() -> ConversationHandler:
             CallbackQueryHandler(prompt_edit_rules, pattern="^edit_rules$"),
             CallbackQueryHandler(prompt_edit_cxp, pattern="^edit_cxp$"),
             CallbackQueryHandler(prompt_edit_channel_fwd, pattern="^edit_channel_fwd$"),
+            CallbackQueryHandler(manage_blacklist, pattern="^manage_blacklist$"),
+            CallbackQueryHandler(prompt_add_blacklist, pattern="^add_blacklist$"),
+            CallbackQueryHandler(prompt_remove_blacklist, pattern="^remove_blacklist$"),
         ],
         states={
             MAIN_GROUP: [
@@ -846,6 +942,8 @@ def get_config_conversation_handler() -> ConversationHandler:
             EDIT_CHANNEL_FWD: [MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_channel_fwd)],
             ADD_CHANNEL_ADMIN: [MessageHandler(filters.ALL & ~filters.COMMAND, save_add_channel_admin)],
             REMOVE_CHANNEL_ADMIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_remove_channel_admin)],
+            ADD_BLACKLIST: [MessageHandler(filters.ALL & ~filters.COMMAND, save_add_blacklist)],
+            REMOVE_BLACKLIST: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_remove_blacklist)],
         },
         fallbacks=[CommandHandler("restart", restart)],
         per_message=False,

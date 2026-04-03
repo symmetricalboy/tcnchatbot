@@ -852,21 +852,10 @@ async def user_stats_cmd(update: Update, context: CallbackContext):
 
     cxp = user_data.get("cxp", 0)
     level = calculate_level(cxp)
-    is_admin = user_data.get("is_admin", False)
+    is_blacklisted = user_data.get("is_blacklisted", False)
 
-    # If not manually set as admin in DB, fallback to Telegram Group check
-    if not is_admin and config:
-        if main_group_id:
-            try:
-                member = await context.bot.get_chat_member(main_group_id, target_id)
-                if member.status in ("administrator", "creator"):
-                    is_admin = True
-                    await db.update_user_admin_status(target_id, True)
-            except Exception:
-                pass
-
-    if is_admin:
-        rank_display = "Admin"
+    if is_blacklisted:
+        rank_display = "Unranked"
     else:
         rank = await db.get_user_rank(cxp)
         rank_display = f"#{rank}"
@@ -982,46 +971,13 @@ async def leaderboard_cmd(update: Update, context: CallbackContext):
 
     start_date, end_date, title = parse_leaderboard_args(context.args, config)
 
-    # Fetch a wider net in case many are admins
-    top_candidates = await db.get_leaderboard(limit=50, start_date=start_date, end_date=end_date)
-    if not top_candidates:
-        if main_group_id and cxp_topic_id:
-            await context.bot.send_message(
-                chat_id=main_group_id,
-                message_thread_id=cxp_topic_id,
-                text=f"The {title.lower()} is currently empty!",
-            )
-        return
-
-    actual_top_10 = []
-    for row in top_candidates:
-        if len(actual_top_10) >= 10:
-            break
-
-        u_id = row.get("user_id")
-
-        # Check if admin
-        is_admin = row.get("is_admin", False)
-
-        # If not manually set as admin in DB, fallback to Telegram Group check
-        if not is_admin and main_group_id:
-            try:
-                member = await context.bot.get_chat_member(main_group_id, u_id)
-                if member.status in ("administrator", "creator"):
-                    is_admin = True
-                    await db.update_user_admin_status(u_id, True)
-            except Exception:
-                pass
-
-        if not is_admin:
-            actual_top_10.append(row)
-
+    actual_top_10 = await db.get_leaderboard(limit=10, start_date=start_date, end_date=end_date)
     if not actual_top_10:
         if main_group_id and cxp_topic_id:
             await context.bot.send_message(
                 chat_id=main_group_id,
                 message_thread_id=cxp_topic_id,
-                text="No non-admin users found for the leaderboard.",
+                text=f"The {title.lower()} is currently empty!",
             )
         return
 
