@@ -101,6 +101,7 @@ async def rules_cmd(update: Update, context: CallbackContext):
         chat_id=update.effective_chat.id,
         message_thread_id=update.message.message_thread_id,
         text=msg_text,
+        parse_mode="HTML",
     )
 
     # Schedule deletion of the bot's reply after 5 minutes
