@@ -22,7 +22,7 @@ from telegram.constants import ParseMode
 
 from database import db
 from handlers.owner_menu import get_config_conversation_handler
-from handlers.channel_admin import get_channel_admin_conversation, forward_channel_post, handle_post_action
+from handlers.channel_admin import get_channel_admin_conversation, handle_post_action, handle_forward_decision
 from handlers.verification import welcome_new_member, verify_user
 from handlers.service_cleaner import clean_service_messages
 from handlers.cxp import (
@@ -186,7 +186,7 @@ def main() -> None:
     application.add_handler(get_config_conversation_handler())
     application.add_handler(get_channel_admin_conversation())
     application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^draft_"))
-    application.add_handler(MessageHandler(filters.ChatType.CHANNEL, forward_channel_post))
+    application.add_handler(CallbackQueryHandler(handle_forward_decision, pattern="^(forward_post_|skip_forward_)"))
     application.add_handler(MessageHandler(filters.Regex(r"@admin"), admin_mention))
     application.add_handler(
         MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member)

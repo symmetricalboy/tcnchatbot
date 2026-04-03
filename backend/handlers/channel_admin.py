@@ -262,19 +262,18 @@ async def handle_post_action(update: Update, context: CallbackContext):
                 
             await query.edit_message_text("✅ Message successfully posted to the channel!")
             
-            # Manually forward the bot's newly created channel post to the configured topic
-            main_group_id = config.get("main_group_id")
-            forward_topic_id = config.get("channel_forward_topic_id")
-            if main_group_id and forward_topic_id:
-                try:
-                    await context.bot.forward_message(
-                        chat_id=main_group_id,
-                        from_chat_id=channel_id,
-                        message_id=sent_msg.message_id,
-                        message_thread_id=forward_topic_id
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to auto-forward drafted post: {e}")
+            confirm_keyboard = [
+                [
+                    InlineKeyboardButton("⏩ Forward to Group Topic", callback_data=f"forward_post_{sent_msg.message_id}")
+                ],
+                [
+                    InlineKeyboardButton("⏭️ Skip", callback_data=f"skip_forward_{sent_msg.message_id}")
+                ]
+            ]
+            await query.message.reply_text(
+                "Would you like to forward this post to the group's designated topic?",
+                reply_markup=InlineKeyboardMarkup(confirm_keyboard)
+            )
                     
         except Exception as e:
             logger.error(f"Failed to post to channel: {e}")
@@ -301,33 +300,40 @@ def get_channel_admin_conversation() -> ConversationHandler:
         per_message=False,
     )
 
-async def forward_channel_post(update: Update, context: CallbackContext):
-    """Auto forward posts from the configured channel to the configured main group topic."""
-    message = update.channel_post
-    if not message:
+async def handle_forward_decision(update: Update, context: CallbackContext):
+    """Handle the user's decision to forward a channel post or skip."""
+    query = update.callback_query
+    await query.answer()
+    
+    action = query.data
+    
+    if action.startswith("skip_forward_"):
+        await query.edit_message_text("⏭️ Skipped forwarding to the group topic.")
         return
 
-    config = await db.get_config()
-    if not config:
-        return
+    if action.startswith("forward_post_"):
+        message_id = int(action.split("_")[-1])
+        config = await db.get_config()
+        if not config:
+            await query.edit_message_text("❌ Configuration error: Could not fetch config.")
+            return
+            
+        channel_id = config.get("channel_id")
+        main_group_id = config.get("main_group_id")
+        forward_topic_id = config.get("channel_forward_topic_id")
         
-    channel_id = config.get("channel_id")
-    main_group_id = config.get("main_group_id")
-    forward_topic_id = config.get("channel_forward_topic_id")
-    
-    if not channel_id or not main_group_id or not forward_topic_id:
-        return
-        
-    # Check if the post is from the configured channel
-    if message.chat_id != channel_id:
-        return
-        
-    try:
-        await context.bot.forward_message(
-            chat_id=main_group_id,
-            from_chat_id=message.chat_id,
-            message_id=message.message_id,
-            message_thread_id=forward_topic_id
-        )
-    except Exception as e:
-        logger.error(f"Failed to forward channel post to topic: {e}")
+        if not channel_id or not main_group_id or not forward_topic_id:
+            await query.edit_message_text("❌ Configuration error: Channel, Main Group, or Topic ID is not configured.")
+            return
+            
+        try:
+            await context.bot.forward_message(
+                chat_id=main_group_id,
+                from_chat_id=channel_id,
+                message_id=message_id,
+                message_thread_id=forward_topic_id
+            )
+            await query.edit_message_text("✅ Message successfully forwarded to the group topic!")
+        except Exception as e:
+            logger.error(f"Failed to manually forward drafted post: {e}")
+            await query.edit_message_text(f"❌ Failed to forward message: {e}")
