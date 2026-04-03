@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Define conversation states
 MAIN_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL, CXP_TOPIC = range(4)
 # Additional states for individual edits
-EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME, EDIT_CXP, EDIT_CHANNEL_FWD, ADD_CHANNEL_ADMIN, REMOVE_CHANNEL_ADMIN = range(4, 12)
+EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME, EDIT_CXP, EDIT_CHANNEL_FWD, ADD_CHANNEL_ADMIN, REMOVE_CHANNEL_ADMIN, EDIT_RULES = range(4, 13)
 
 
 async def _extract_topic_id(message) -> int | None:
@@ -155,6 +155,7 @@ async def group_menu(update: Update, context: CallbackContext) -> int:
         [InlineKeyboardButton("🔄 Change Channel", callback_data="edit_channel")],
         [InlineKeyboardButton("🔄 Change Admin Group", callback_data="edit_admin")],
         [InlineKeyboardButton("💬 Edit Welcome Msg", callback_data="edit_welcome")],
+        [InlineKeyboardButton("💬 Edit Rules Msg", callback_data="edit_rules")],
         [InlineKeyboardButton("🎯 Edit CXP Topic", callback_data="edit_cxp")],
         [InlineKeyboardButton("⚙️ Edit Channel Fwd Topic", callback_data="edit_channel_fwd")],
         [InlineKeyboardButton("🛡️ Check Permissions", callback_data="check_perms")],
@@ -593,6 +594,49 @@ async def save_edit_welcome(update: Update, context: CallbackContext) -> int:
     return await start(update, context)
 
 
+async def prompt_edit_rules(update: Update, context: CallbackContext) -> int:
+    """Prompt the user for a new Rules Message."""
+    query = update.callback_query
+    await query.answer()
+
+    config = await db.get_config()
+    current_msg = config.get("rules_message") if config else "Not set"
+
+    await query.message.reply_text(
+        f"💬 <b>Change Rules Message</b>\n\n"
+        f"Here is your current rules message:\n"
+        f"----------------------\n"
+        f"{current_msg}\n"
+        f"----------------------\n\n"
+        f"Please send me the <b>new rules message text</b>.\n\n"
+        f"<i>(Type /restart to cancel this edit and return to the main menu)</i>",
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+    return EDIT_RULES
+
+
+async def save_edit_rules(update: Update, context: CallbackContext) -> int:
+    """Save the new Rules Message."""
+    rules_input = getattr(update.message, "text_html", update.message.text)
+    if rules_input:
+        rules_input = rules_input.strip()
+
+    try:
+        success = await db.update_config(rules_message=rules_input)
+        if not success:
+            raise Exception(f"Database returned False. Pool is None: {db.pool is None}")
+        await update.message.reply_text(
+            f"✅ Rules message updated successfully.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"Failed to update Rules Message: {e}")
+        await update.message.reply_text(f"Database update failed: {e}")
+
+    return await start(update, context)
+
+
 async def prompt_edit_cxp(update: Update, context: CallbackContext) -> int:
     """Prompt the user for a new CXP Topic."""
     query = update.callback_query
@@ -768,6 +812,7 @@ def get_config_conversation_handler() -> ConversationHandler:
             CallbackQueryHandler(prompt_edit_channel, pattern="^edit_channel$"),
             CallbackQueryHandler(prompt_edit_admin, pattern="^edit_admin$"),
             CallbackQueryHandler(prompt_edit_welcome, pattern="^edit_welcome$"),
+            CallbackQueryHandler(prompt_edit_rules, pattern="^edit_rules$"),
             CallbackQueryHandler(prompt_edit_cxp, pattern="^edit_cxp$"),
             CallbackQueryHandler(prompt_edit_channel_fwd, pattern="^edit_channel_fwd$"),
         ],
@@ -793,6 +838,9 @@ def get_config_conversation_handler() -> ConversationHandler:
             ],
             EDIT_WELCOME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_welcome)
+            ],
+            EDIT_RULES: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_rules)
             ],
             EDIT_CXP: [MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_cxp)],
             EDIT_CHANNEL_FWD: [MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_channel_fwd)],

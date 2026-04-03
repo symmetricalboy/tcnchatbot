@@ -45,6 +45,7 @@ class Database:
                 ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS channel_forward_topic_id BIGINT;
                 ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS contest_start DATE;
                 ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS contest_end DATE;
+                ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS rules_message TEXT;
                 
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
@@ -143,6 +144,7 @@ class Database:
             "channel_id",
             "admin_group_id",
             "welcome_message",
+            "rules_message",
             "cxp_topic_id",
             "channel_forward_topic_id",
             "contest_start",

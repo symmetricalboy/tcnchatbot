@@ -38,7 +38,7 @@ from handlers.cxp import (
     contest_cmd,
     syncperms_cmd,
 )
-from handlers.help import help_cmd, commands_cmd
+from handlers.help import help_cmd, commands_cmd, rules_cmd
 from handlers.translation import (
     translate_en_cmd,
     translate_pt_cmd,
@@ -210,6 +210,7 @@ def main() -> None:
     application.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
     application.add_handler(CommandHandler("help", help_cmd))
     application.add_handler(CommandHandler("commands", commands_cmd))
+    application.add_handler(CommandHandler("rules", rules_cmd))
     application.add_handler(CommandHandler("give", give_cxp_cmd))
     application.add_handler(CommandHandler("checkid", get_id_cmd))
     application.add_handler(CommandHandler("setadmin", set_admin_cmd))
