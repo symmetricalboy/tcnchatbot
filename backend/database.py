@@ -45,6 +45,7 @@ class Database:
                 ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS channel_forward_topic_id BIGINT;
                 ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS contest_start DATE;
                 ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS contest_end DATE;
+                ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS rules_message TEXT;
                 
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
@@ -58,6 +59,7 @@ class Database:
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_channel_admin BOOLEAN DEFAULT FALSE;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS is_blacklisted BOOLEAN DEFAULT FALSE;
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_steal_time TIMESTAMP;
                 ALTER TABLE users ADD COLUMN IF NOT EXISTS location VARCHAR(255);
 
@@ -100,6 +102,12 @@ class Database:
                     PRIMARY KEY (user_id, date)
                 );
                 
+                CREATE TABLE IF NOT EXISTS channel_links (
+                    channel_id BIGINT PRIMARY KEY,
+                    user_id BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
                 INSERT INTO bot_config (id, welcome_message) 
                 VALUES (1, 'Welcome {mention}!\n\n📜 Community Rules:\n- Be polite and respectful\n- No spam or unwanted advertising\n- Follow moderator instructions\n- Please use the appropriate topics for your discussions\n\n🎮 Enjoy your time in The Clean Network Community!') 
                 ON CONFLICT (id) DO NOTHING;
@@ -137,6 +145,7 @@ class Database:
             "channel_id",
             "admin_group_id",
             "welcome_message",
+            "rules_message",
             "cxp_topic_id",
             "channel_forward_topic_id",
             "contest_start",
@@ -285,6 +294,20 @@ class Database:
         async with self.pool.acquire() as conn:
             return await conn.fetch("SELECT * FROM users WHERE is_channel_admin = TRUE")
 
+    async def update_user_blacklist_status(self, user_id: int, is_blacklisted: bool):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET is_blacklisted = $2 WHERE user_id = $1", user_id, is_blacklisted
+            )
+
+    async def get_blacklisted_users(self):
+        if not self.pool:
+            return []
+        async with self.pool.acquire() as conn:
+            return await conn.fetch("SELECT * FROM users WHERE is_blacklisted = TRUE")
+
     async def update_user_cxp(self, user_id, delta_cxp, update_timestamp=False):
         if not self.pool:
             return False
@@ -321,7 +344,7 @@ class Database:
             return None
         async with self.pool.acquire() as conn:
             count = await conn.fetchval(
-                "SELECT COUNT(*) FROM users WHERE cxp > $1 AND (is_admin = FALSE OR is_admin IS NULL)",
+                "SELECT COUNT(*) FROM users WHERE cxp > $1 AND (is_blacklisted = FALSE OR is_blacklisted IS NULL)",
                 cxp,
             )
             return count + 1
@@ -337,7 +360,8 @@ class Database:
                            COALESCE(SUM(d.cxp_gained), 0) AS cxp
                     FROM users u
                     JOIN user_daily_cxp d ON u.user_id = d.user_id
-                    WHERE d.date >= $1 AND d.date <= $2
+                    LEFT JOIN channel_links cl ON u.user_id = cl.channel_id
+                    WHERE d.date >= $1 AND d.date <= $2 AND cl.channel_id IS NULL AND (u.is_blacklisted = FALSE OR u.is_blacklisted IS NULL)
                     GROUP BY u.user_id, u.is_admin, u.display_name, u.username, u.cxp
                     HAVING COALESCE(SUM(d.cxp_gained), 0) > 0
                     ORDER BY cxp DESC
@@ -347,7 +371,12 @@ class Database:
                 )
             else:
                 return await conn.fetch(
-                    "SELECT * FROM users ORDER BY cxp DESC LIMIT $1", limit
+                    """
+                    SELECT u.* FROM users u 
+                    LEFT JOIN channel_links cl ON u.user_id = cl.channel_id 
+                    WHERE cl.channel_id IS NULL AND (u.is_blacklisted = FALSE OR u.is_blacklisted IS NULL)
+                    ORDER BY u.cxp DESC LIMIT $1
+                    """, limit
                 )
 
     async def record_message(self, chat_id, message_id, user_id):
@@ -469,6 +498,54 @@ class Database:
                 "SELECT original_message_id, author_id, author_name FROM translated_messages WHERE chat_id = $1 AND message_id = $2",
                 chat_id,
                 message_id,
+            )
+
+    async def link_channel(self, channel_id: int, user_id: int):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO channel_links (channel_id, user_id) 
+                    VALUES ($1, $2) 
+                    ON CONFLICT (channel_id) DO UPDATE SET user_id = EXCLUDED.user_id
+                    """,
+                    channel_id,
+                    user_id,
+                )
+                
+                # Check if channel had existing CXP
+                channel_data = await conn.fetchrow("SELECT cxp FROM users WHERE user_id = $1", channel_id)
+                if channel_data and channel_data["cxp"] > 0:
+                    channel_cxp = channel_data["cxp"]
+                    # Add to user
+                    await conn.execute("UPDATE users SET cxp = cxp + $2 WHERE user_id = $1", user_id, channel_cxp)
+                    # Reset channel cxp
+                    await conn.execute("UPDATE users SET cxp = 0 WHERE user_id = $1", channel_id)
+
+    async def get_channel_owner(self, channel_id: int):
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT user_id FROM channel_links WHERE channel_id = $1", channel_id
+            )
+
+    async def get_user_channels(self, user_id: int):
+        if not self.pool:
+            return []
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                "SELECT channel_id FROM channel_links WHERE user_id = $1", user_id
+            )
+
+    async def unlink_channel(self, channel_id: int):
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM channel_links WHERE channel_id = $1", channel_id
             )
 
 

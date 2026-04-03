@@ -22,7 +22,7 @@ from telegram.constants import ParseMode
 
 from database import db
 from handlers.owner_menu import get_config_conversation_handler
-from handlers.channel_admin import get_channel_admin_conversation, forward_channel_post, handle_post_action
+from handlers.channel_admin import get_channel_admin_conversation, handle_post_action, handle_forward_decision
 from handlers.verification import welcome_new_member, verify_user
 from handlers.service_cleaner import clean_service_messages
 from handlers.cxp import (
@@ -38,7 +38,7 @@ from handlers.cxp import (
     contest_cmd,
     syncperms_cmd,
 )
-from handlers.help import help_cmd, commands_cmd
+from handlers.help import help_cmd, commands_cmd, rules_cmd
 from handlers.translation import (
     translate_en_cmd,
     translate_pt_cmd,
@@ -55,6 +55,8 @@ from handlers.translation import (
 from handlers.moderation import mute_cmd, unmute_cmd, kick_cmd, ban_cmd
 from handlers.ai_chat import ask_cmd
 from handlers.time import time_cmd, settime_cmd
+from handlers.ping import ping_cmd
+from handlers.channel_link import set_channel_cmd
 
 # Suppress Python 3.14 SyntaxWarning from anyio dependency
 warnings.filterwarnings(
@@ -102,9 +104,15 @@ async def auth_middleware(update: Update, context) -> None:
                 is_allowed = True
                 
         if not is_allowed:
-            if update.message:
-                await update.message.reply_text("This bot does not provide any user facing functionality via direct message.")
-            raise ApplicationHandlerStop()
+            # Check if attempting to run an allowed user-facing command
+            message_text = update.message.text.lower() if update.message and update.message.text else ""
+            if message_text.startswith("/start setchannel") or message_text.startswith("/setchannel"):
+                # We allow users to use the bot in DM for channel linking
+                pass
+            else:
+                if update.message:
+                    await update.message.reply_text("This bot does not provide any user facing functionality via direct message except for linking channels.")
+                raise ApplicationHandlerStop()
 
     if chat_type in ("group", "supergroup"):
         config = await db.get_config()
@@ -178,7 +186,7 @@ def main() -> None:
     application.add_handler(get_config_conversation_handler())
     application.add_handler(get_channel_admin_conversation())
     application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^draft_"))
-    application.add_handler(MessageHandler(filters.ChatType.CHANNEL, forward_channel_post))
+    application.add_handler(CallbackQueryHandler(handle_forward_decision, pattern="^(forward_post_|skip_forward_)"))
     application.add_handler(MessageHandler(filters.Regex(r"@admin"), admin_mention))
     application.add_handler(
         MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member)
@@ -202,6 +210,7 @@ def main() -> None:
     application.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
     application.add_handler(CommandHandler("help", help_cmd))
     application.add_handler(CommandHandler("commands", commands_cmd))
+    application.add_handler(CommandHandler("rules", rules_cmd))
     application.add_handler(CommandHandler("give", give_cxp_cmd))
     application.add_handler(CommandHandler("checkid", get_id_cmd))
     application.add_handler(CommandHandler("setadmin", set_admin_cmd))
@@ -234,6 +243,12 @@ def main() -> None:
     # Time Features
     application.add_handler(CommandHandler("time", time_cmd))
     application.add_handler(CommandHandler("settime", settime_cmd))
+
+    # Ping Feature
+    application.add_handler(CommandHandler("ping", ping_cmd))
+
+    # Channel Claiming
+    application.add_handler(CommandHandler("setchannel", set_channel_cmd))
 
     # Start the Bot
     PORT = int(os.environ.get("PORT", "443"))

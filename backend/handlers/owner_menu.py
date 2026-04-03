@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 # Define conversation states
 MAIN_GROUP, PUBLIC_CHANNEL, ADMIN_CHANNEL, CXP_TOPIC = range(4)
 # Additional states for individual edits
-EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME, EDIT_CXP, EDIT_CHANNEL_FWD, ADD_CHANNEL_ADMIN, REMOVE_CHANNEL_ADMIN = range(4, 12)
+EDIT_MAIN, EDIT_CHANNEL, EDIT_ADMIN, EDIT_WELCOME, EDIT_CXP, EDIT_CHANNEL_FWD, ADD_CHANNEL_ADMIN, REMOVE_CHANNEL_ADMIN, EDIT_RULES = range(4, 13)
+MANAGE_BLACKLIST, ADD_BLACKLIST, REMOVE_BLACKLIST = range(13, 16)
 
 
 async def _extract_topic_id(message) -> int | None:
@@ -81,6 +82,25 @@ async def start(update: Update, context: CallbackContext) -> int:
     if update.effective_chat.type != "private":
         return ConversationHandler.END
 
+    if context.args and context.args[0] == "setchannel":
+        from handlers.channel_link import set_channel_cmd
+        await set_channel_cmd(update, context)
+        return ConversationHandler.END
+
+    # Check owner/admin status securely
+    import os
+    bot_owner_id_str = os.getenv("BOT_OWNER_ID")
+    bot_owner_id = int(bot_owner_id_str) if bot_owner_id_str else None
+    user_id = update.effective_user.id
+    is_allowed = (user_id == bot_owner_id)
+    if not is_allowed:
+        db_user = await db.get_user(user_id)
+        if db_user and db_user.get("is_channel_admin"):
+            is_allowed = True
+    if not is_allowed:
+        await update.message.reply_text("You are not authorized to access the owner menu.")
+        return ConversationHandler.END
+
     # Check database status
     config = await db.get_config()
     is_configured = False
@@ -111,6 +131,7 @@ async def start(update: Update, context: CallbackContext) -> int:
         keyboard = [
             [InlineKeyboardButton("⚙️ Group & Channel", callback_data="group_menu")],
             [InlineKeyboardButton("👥 Manage Channel Admins", callback_data="manage_channel_admins")],
+            [InlineKeyboardButton("🛑 Manage Blacklist", callback_data="manage_blacklist")],
             [InlineKeyboardButton("📝 Draft Channel Post", callback_data="start_drafting")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -136,6 +157,7 @@ async def group_menu(update: Update, context: CallbackContext) -> int:
         [InlineKeyboardButton("🔄 Change Channel", callback_data="edit_channel")],
         [InlineKeyboardButton("🔄 Change Admin Group", callback_data="edit_admin")],
         [InlineKeyboardButton("💬 Edit Welcome Msg", callback_data="edit_welcome")],
+        [InlineKeyboardButton("💬 Edit Rules Msg", callback_data="edit_rules")],
         [InlineKeyboardButton("🎯 Edit CXP Topic", callback_data="edit_cxp")],
         [InlineKeyboardButton("⚙️ Edit Channel Fwd Topic", callback_data="edit_channel_fwd")],
         [InlineKeyboardButton("🛡️ Check Permissions", callback_data="check_perms")],
@@ -160,6 +182,7 @@ async def back_to_main(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [InlineKeyboardButton("⚙️ Group & Channel", callback_data="group_menu")],
         [InlineKeyboardButton("👥 Manage Channel Admins", callback_data="manage_channel_admins")],
+        [InlineKeyboardButton("🛑 Manage Blacklist", callback_data="manage_blacklist")],
         [InlineKeyboardButton("📝 Draft Channel Post", callback_data="start_drafting")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -539,15 +562,15 @@ async def prompt_edit_welcome(update: Update, context: CallbackContext) -> int:
     current_msg = config.get("welcome_message") if config else "Not set"
 
     await query.message.reply_text(
-        f"💬 **Change Welcome Message**\n\n"
+        f"💬 <b>Change Welcome Message</b>\n\n"
         f"Here is your current welcome message:\n"
         f"----------------------\n"
         f"{current_msg}\n"
         f"----------------------\n\n"
-        f"Please send me the **new welcome message text**. You can use `{{mention}}` "
+        f"Please send me the <b>new welcome message text</b>. You can use <code>{{mention}}</code> "
         f"to mention the user.\n\n"
-        f"*(Type /restart to cancel this edit and return to the main menu)*",
-        parse_mode="Markdown",
+        f"<i>(Type /restart to cancel this edit and return to the main menu)</i>",
+        parse_mode="HTML",
         disable_web_page_preview=True,
     )
     return EDIT_WELCOME
@@ -555,7 +578,9 @@ async def prompt_edit_welcome(update: Update, context: CallbackContext) -> int:
 
 async def save_edit_welcome(update: Update, context: CallbackContext) -> int:
     """Save the new Welcome Message."""
-    welcome_input = update.message.text.strip()
+    welcome_input = getattr(update.message, "text_html", update.message.text)
+    if welcome_input:
+        welcome_input = welcome_input.strip()
 
     try:
         success = await db.update_config(welcome_message=welcome_input)
@@ -567,6 +592,49 @@ async def save_edit_welcome(update: Update, context: CallbackContext) -> int:
         )
     except Exception as e:
         logger.error(f"Failed to update Welcome Message: {e}")
+        await update.message.reply_text(f"Database update failed: {e}")
+
+    return await start(update, context)
+
+
+async def prompt_edit_rules(update: Update, context: CallbackContext) -> int:
+    """Prompt the user for a new Rules Message."""
+    query = update.callback_query
+    await query.answer()
+
+    config = await db.get_config()
+    current_msg = config.get("rules_message") if config else "Not set"
+
+    await query.message.reply_text(
+        f"💬 <b>Change Rules Message</b>\n\n"
+        f"Here is your current rules message:\n"
+        f"----------------------\n"
+        f"{current_msg}\n"
+        f"----------------------\n\n"
+        f"Please send me the <b>new rules message text</b>.\n\n"
+        f"<i>(Type /restart to cancel this edit and return to the main menu)</i>",
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+    return EDIT_RULES
+
+
+async def save_edit_rules(update: Update, context: CallbackContext) -> int:
+    """Save the new Rules Message."""
+    rules_input = getattr(update.message, "text_html", update.message.text)
+    if rules_input:
+        rules_input = rules_input.strip()
+
+    try:
+        success = await db.update_config(rules_message=rules_input)
+        if not success:
+            raise Exception(f"Database returned False. Pool is None: {db.pool is None}")
+        await update.message.reply_text(
+            f"✅ Rules message updated successfully.",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"Failed to update Rules Message: {e}")
         await update.message.reply_text(f"Database update failed: {e}")
 
     return await start(update, context)
@@ -732,6 +800,96 @@ async def save_remove_channel_admin(update: Update, context: CallbackContext) ->
     await update.message.reply_text(f"✅ Removed `{db_user.get('display_name', db_user.get('username'))}` from Channel Admins.", parse_mode="Markdown")
     return await start(update, context)
 
+async def manage_blacklist(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    blacklisted = await db.get_blacklisted_users()
+    blacklisted_list = "\n".join([f"- {u['display_name'] or u['username']} (`{u['user_id']}`)" for u in blacklisted])
+    if not blacklisted_list:
+        blacklisted_list = "No users are currently blacklisted."
+
+    keyboard = [
+        [InlineKeyboardButton("➕ Add to Blacklist", callback_data="add_blacklist")],
+        [InlineKeyboardButton("➖ Remove from Blacklist", callback_data="remove_blacklist")],
+        [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")],
+    ]
+    
+    await query.edit_message_text(
+        f"🛑 **Manage Leaderboard Blacklist**\n\n"
+        f"Blacklisted users earn CXP but are hidden from leaderboards and shown as 'Unranked'.\n\n"
+        f"Current Blacklisted Users:\n{blacklisted_list}\n\n"
+        f"Select an action below.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+async def prompt_add_blacklist(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.reply_text(
+        "➕ **Add to Blacklist**\n\n"
+        "Please send me the **@username** or forward a message from the user you want to blacklist.\n"
+        "The user must have interacted with the bot in a group or DM before.\n\n"
+        "*(Type /restart to cancel)*",
+        parse_mode="Markdown",
+    )
+    return ADD_BLACKLIST
+
+async def save_add_blacklist(update: Update, context: CallbackContext) -> int:
+    if update.message.forward_origin:
+        if update.message.forward_origin.type == "user":
+            user_id = update.message.forward_origin.sender_user.id
+            db_user = await db.get_user(user_id)
+            if not db_user:
+                await update.message.reply_text("This user has not interacted with me yet. Cannot add them.")
+                return ADD_BLACKLIST
+        else:
+             await update.message.reply_text("Could not determine user from forward. Please try a direct forward or username.")
+             return ADD_BLACKLIST
+    else:
+        username = update.message.text.strip()
+        db_user = await db.get_user_by_username(username)
+        if not db_user:
+            await update.message.reply_text("Could not find this user in the database.")
+            return ADD_BLACKLIST
+        user_id = db_user["user_id"]
+
+    await db.update_user_blacklist_status(user_id, True)
+    await update.message.reply_text(f"✅ Added `{db_user.get('display_name', db_user.get('username'))}` to the leaderboard blacklist.", parse_mode="Markdown")
+    return await start(update, context)
+
+async def prompt_remove_blacklist(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.reply_text(
+        "➖ **Remove from Blacklist**\n\n"
+        "Please send me the **@username** or numeric ID of the user you want to remove.\n\n"
+        "*(Type /restart to cancel)*",
+        parse_mode="Markdown",
+    )
+    return REMOVE_BLACKLIST
+
+async def save_remove_blacklist(update: Update, context: CallbackContext) -> int:
+    input_str = update.message.text.strip()
+    try:
+        user_id = int(input_str)
+        db_user = await db.get_user(user_id)
+    except ValueError:
+        db_user = await db.get_user_by_username(input_str)
+        
+    if not db_user:
+        await update.message.reply_text("Could not find this user in the database.")
+        return REMOVE_BLACKLIST
+
+    user_id = db_user["user_id"]
+    await db.update_user_blacklist_status(user_id, False)
+    await update.message.reply_text(f"✅ Removed `{db_user.get('display_name', db_user.get('username'))}` from the leaderboard blacklist.", parse_mode="Markdown")
+    return await start(update, context)
+
 def get_config_conversation_handler() -> ConversationHandler:
     warnings.filterwarnings("ignore", category=PTBUserWarning)
     return ConversationHandler(
@@ -747,8 +905,12 @@ def get_config_conversation_handler() -> ConversationHandler:
             CallbackQueryHandler(prompt_edit_channel, pattern="^edit_channel$"),
             CallbackQueryHandler(prompt_edit_admin, pattern="^edit_admin$"),
             CallbackQueryHandler(prompt_edit_welcome, pattern="^edit_welcome$"),
+            CallbackQueryHandler(prompt_edit_rules, pattern="^edit_rules$"),
             CallbackQueryHandler(prompt_edit_cxp, pattern="^edit_cxp$"),
             CallbackQueryHandler(prompt_edit_channel_fwd, pattern="^edit_channel_fwd$"),
+            CallbackQueryHandler(manage_blacklist, pattern="^manage_blacklist$"),
+            CallbackQueryHandler(prompt_add_blacklist, pattern="^add_blacklist$"),
+            CallbackQueryHandler(prompt_remove_blacklist, pattern="^remove_blacklist$"),
         ],
         states={
             MAIN_GROUP: [
@@ -773,10 +935,15 @@ def get_config_conversation_handler() -> ConversationHandler:
             EDIT_WELCOME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_welcome)
             ],
+            EDIT_RULES: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, save_edit_rules)
+            ],
             EDIT_CXP: [MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_cxp)],
             EDIT_CHANNEL_FWD: [MessageHandler(filters.ALL & ~filters.COMMAND, save_edit_channel_fwd)],
             ADD_CHANNEL_ADMIN: [MessageHandler(filters.ALL & ~filters.COMMAND, save_add_channel_admin)],
             REMOVE_CHANNEL_ADMIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_remove_channel_admin)],
+            ADD_BLACKLIST: [MessageHandler(filters.ALL & ~filters.COMMAND, save_add_blacklist)],
+            REMOVE_BLACKLIST: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_remove_blacklist)],
         },
         fallbacks=[CommandHandler("restart", restart)],
         per_message=False,

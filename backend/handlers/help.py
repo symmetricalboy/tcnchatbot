@@ -1,5 +1,7 @@
 from telegram import Update
 from telegram.ext import CallbackContext
+import asyncio
+from database import db
 
 
 async def help_cmd(update: Update, context: CallbackContext):
@@ -61,6 +63,8 @@ async def commands_cmd(update: Update, context: CallbackContext):
         "  *Syntax:* `/time <location>` or `/time @username`\n\n"
         "• `/settime` — Set your own local time zone/location.\n"
         "  *Syntax:* `/settime <location>`\n\n"
+        "• `/ping` — Check bot response latency and connection method.\n"
+        "  *Syntax:* `/ping`\n\n"
         "**Translation Commands:**\n"
         "Start a message with or reply to a message with one of the following commands to translate it:\n"
         "`/en` (English), `/es` (Spanish), `/fr` (French),\n"
@@ -79,3 +83,33 @@ async def commands_cmd(update: Update, context: CallbackContext):
         text=msg,
         parse_mode="Markdown",
     )
+
+
+async def rules_cmd(update: Update, context: CallbackContext):
+    """Handler for /rules to show the rules message. Auto-deletes after 5 minutes."""
+    config = await db.get_config()
+    msg_text = config.get("rules_message") if config else "Rules are not set yet."
+    if not msg_text:
+        msg_text = "Rules are not set yet."
+
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    reply_msg = await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        message_thread_id=update.message.message_thread_id,
+        text=msg_text,
+        parse_mode="HTML",
+    )
+
+    # Schedule deletion of the bot's reply after 5 minutes
+    async def delete_later():
+        await asyncio.sleep(300)
+        try:
+            await reply_msg.delete()
+        except Exception:
+            pass
+
+    asyncio.create_task(delete_later())
