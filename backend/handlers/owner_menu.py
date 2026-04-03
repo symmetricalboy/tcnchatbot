@@ -558,15 +558,15 @@ async def prompt_edit_welcome(update: Update, context: CallbackContext) -> int:
     current_msg = config.get("welcome_message") if config else "Not set"
 
     await query.message.reply_text(
-        f"💬 **Change Welcome Message**\n\n"
+        f"💬 <b>Change Welcome Message</b>\n\n"
         f"Here is your current welcome message:\n"
         f"----------------------\n"
         f"{current_msg}\n"
         f"----------------------\n\n"
-        f"Please send me the **new welcome message text**. You can use `{{mention}}` "
+        f"Please send me the <b>new welcome message text</b>. You can use <code>{{mention}}</code> "
         f"to mention the user.\n\n"
-        f"*(Type /restart to cancel this edit and return to the main menu)*",
-        parse_mode="Markdown",
+        f"<i>(Type /restart to cancel this edit and return to the main menu)</i>",
+        parse_mode="HTML",
         disable_web_page_preview=True,
     )
     return EDIT_WELCOME
@@ -574,7 +574,9 @@ async def prompt_edit_welcome(update: Update, context: CallbackContext) -> int:
 
 async def save_edit_welcome(update: Update, context: CallbackContext) -> int:
     """Save the new Welcome Message."""
-    welcome_input = update.message.text.strip()
+    welcome_input = getattr(update.message, "text_html", update.message.text)
+    if welcome_input:
+        welcome_input = welcome_input.strip()
 
     try:
         success = await db.update_config(welcome_message=welcome_input)
